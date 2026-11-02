@@ -1,0 +1,10 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- EQ bars foreground layer from canonical design/logo.svg -->
+  <g fill="#ffffff">
+    <rect x="248" y="450" width="80" height="124" rx="40" />
+    <rect x="360" y="376" width="80" height="272" rx="40" />
+    <rect x="472" y="280" width="80" height="464" rx="40" />
+    <rect x="584" y="376" width="80" height="272" rx="40" />
+    <rect x="696" y="450" width="80" height="124" rx="40" />
+  </g>
+</svg>

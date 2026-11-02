@@ -1,0 +1,403 @@
+#+TITLE: eqR — User Guide
+#+OPTIONS: toc:2 num:nil
+
+How to use eqR, and what each part of it does. Installing it is covered in
+the [[file:../README.org][README]].
+
+* Getting started
+
+1. Launch eqR. A sliders icon appears in the menu bar; there is no Dock icon.
+2. Allow *System Audio Recording*. On first launch eqR opens its window and
+   explains what the permission is for before macOS asks; press *Allow…* and
+   macOS shows its prompt. eqR needs the permission to process the sound you
+   hear. Nothing is recorded, stored, or transmitted. See [[*The audio permission][The audio permission]].
+3. Choose a preset. The sound changes immediately.
+
+* The window
+
+Presets in the sidebar, with a search field and your own presets above the
+built-ins, and a bar beneath them: the =+= creates a preset or imports one, and
+*AutoEq* opens the catalog or the guide to autoeq.app. Then the response
+graph, the *Graphic* / *Parametric* editors, and the preamp / 3D block on the
+right (see [[*The 3D control][The 3D control]]). The
+output device sits in the centre of the header and names the preset playing on
+it underneath, with a dot when that preset has unsaved changes; where the
+machine has more than one output, that control is also how you choose between
+them. *Revert* sits beside it — next to the preset it would discard — and the
+gear and the master switch close the row.
+
+** One filter chain, two ways to edit it
+
+The *Graphic* editor is the professional ISO octave ladder — 32, 64, 125, 250,
+500 Hz and 1, 2, 4, 8, 16, 20 kHz — at fixed centre frequencies, each adjustable
+±12 dB. The *Parametric* editor adds up to sixteen bands of your own anywhere
+between 20 Hz and 20 kHz, each a bell, shelf, or pass filter with its own
+frequency, gain (±20 dB), and Q. A bell's Q goes up to 16, about a twelfth of
+an octave, narrow enough for a single resonance or a whine; shelves and pass
+filters stop at 10, because past that they overshoot rather than narrow.
+
+The two editors are tabs on the editing area's own border, and both edit the
+same chain and the same graph: the sliders are eleven filters that happen to be
+locked to the ladder, and an added band is one that is not. Nothing is
+converted, approximated, or reconciled between the two views, so a change made
+in either is exact and reversible.
+
+Right-click a band slider for *Edit as Filter*, which moves that band into the
+parametric editor without changing the sound.
+
+** The 3D control
+
+The slider on the right, under the *3D* tab, widens or narrows the stereo image
+of whatever is playing. The middle — 100% — is exactly what the preset and your
+audio leave untouched; drag up toward 200% to expand the soundstage, or down to
+0% — shown as MONO — to collapse both channels to one, which is useful for
+late-night listening or for sources with phase problems. The widening keeps
+sub-bass centred so kick drums stay punchy, and it changes only the difference
+between the two channels: a mono source stays a mono source at any setting.
+Changes fade in over a few hundred milliseconds rather than jumping, so dragging
+the slider mid-song is seamless. Double-click the slider or press the 100% badge
+to return to neutral.
+
+If widening would push a loud passage past full scale, eqR turns both channels
+down by just enough for that moment, so the image does not shift; below full
+scale it touches nothing.
+
+** The response graph
+
+The window plots the true combined magnitude response of the chain, computed
+from the same coefficients the audio path renders with — not an interpolated
+approximation. Drag a handle to change a band, double-click one to reset it,
+or double-click empty space to add a parametric band exactly where you clicked.
+
+The round handles are the graphic bands and the numbered nodes are the
+parametric bands. Clicking or dragging either one shows the editor it belongs
+to: a node opens the Parametric tab with its row selected, and a handle opens
+the Graphic tab.
+
+** The spectrum analyzer
+
+A Hann-windowed FFT of the audio actually reaching your speakers is drawn
+behind the response curve on the same frequency axis, with fast-attack /
+slow-release smoothing, so you can read the programme material against your
+shaping.
+
+* The menu bar
+
+eqR runs as a menu bar application with no Dock icon. The status menu carries
+the master switch, output device, the preset list, a live response preview, and
+three Quick EQ tone controls (bass, mid, treble) layered over the active preset
+— all without opening a window. It also holds *Open Equalizer*, *Settings…*,
+and *Quit eqR*: eqR has no menu bar of its own, so this is where those live.
+
+* Presets
+
+Ten built-in profiles — tested parametric curves from equalizerapoguide.com,
+plus Flat — and your own, managed from the sidebar. When updating, any preset
+that was in use is kept as a preset of your own so your sound does not change.
+Built-ins are immutable; your presets can be renamed, duplicated, edited, and
+deleted. Switching is instantaneous and glitch-free. Hover a built-in preset, in
+the sidebar or the menu, for a one-line description of what it is for. The
+sidebar's search field matches the way the AutoEq catalog does: each word on
+its own, anywhere in the name, so “speakers” finds Laptop Speakers.
+
+The =+= at the bottom of the sidebar creates a *New Preset* from the current
+sound, opens the AutoEq catalog, or imports one. Right-click a preset for *Rename*, *Duplicate*, *Save
+Changes*, *Reset to Preset*, *Export Preset*, and *Delete*.
+
+Editing the active preset marks it *Edited*; *Save Changes* writes the values
+into one of your own presets and *Revert* discards them. Your edits, the active
+preset, and the on/off state are restored on every launch, per output device.
+
+* Import and export
+
+Presets move in and out as EqualizerAPO text — the format AutoEq writes its
+headphone corrections in — or as eqR's own =.eqr= files (with support for importing legacy =.coreeq= files). Import from the
+=+= at the bottom of the sidebar, paste with =⌘V=, or drop a file onto the
+preset list; every import shows what it found before anything is added. The
+*AutoEq* button beside the =+= opens the catalog directly; for a correction from
+autoeq.app by hand, use *Import by Hand…* in the catalog sheet.
+
+An import that changes nothing asks a simple *Import* / *Cancel*. An import that
+would change a value asks with a confirmation sheet instead: it lists each
+change — which filter, the value as written and the value it would become, and
+the eqR limit responsible — and the measured response impact, as RMS and
+maximum dB across 20 Hz–20 kHz. When a value has no physical response to
+measure, the sheet says the impact cannot be measured rather than inventing a
+number. Values eqR can represent are kept exactly by default; a bell above
+the ±12 dB graphic range can instead be clipped back onto its slider, and the
+sheet shows what that would cost. Nothing is written until you confirm.
+
+From EqualizerAPO text, eqR reads =Preamp:= and =PK=, =LSC=, =HSC=, =HP= and
+=LP= filters, with Q or bandwidth in octaves. It reads UTF-8, UTF-16 and
+Windows-1252 files. A preset holds up to sixteen parametric bands with gain within
+±20 dB, frequency 20 Hz–20 kHz, and Q 0.1–16 for a bell or 0.1–10 for shelves and
+pass filters. Graphic bands and preamp stay within
+±12 dB. A longer file keeps its pass filters and its strongest bands, and any
+value brought into range is disclosed before it is added. Previously imported
+presets whose gains were clamped must be reimported from the original file to
+recover them. =GraphicEQ:=, =Channel:= and other EqualizerAPO commands are
+skipped and listed in the preview — so filters meant for one channel apply to
+both. A file without a =Preamp:= line gets the automatic trim.
+
+Export is on a preset's right-click menu, as EqualizerAPO text or =.eqr=.
+Exporting the preset you are listening to writes what you hear, unsaved edits
+included.
+
+* The AutoEq catalog
+
+eqR can fetch a headphone correction from the [[https://github.com/jaakkopasanen/AutoEq][AutoEq project]], without
+downloading a file by hand. The *AutoEq* button beside the =+= opens the catalog
+sheet directly, as does *Browse AutoEq Catalog…* in the =+= menu. For corrections AutoEq computes for a target you choose there,
+use *Import by Hand…* in the sheet's action row: it closes the catalog, opens
+the step-by-step guide on the main window, and the correction you paste lands
+in your preset list.
+
+The catalog sheet keeps the equalizer in context while you listen. Type in the
+search field to find a model by name — the catalog holds thousands and matches
+as you type. Each word is matched on its own, in any order, ignoring case,
+accents and punctuation, so “sony mdr m1” finds Sony MDR-M1, and “600” finds
+both the HD 600 and the HD600. Names where the words start a word are listed
+first. A model measured more than once says how many measurements it has.
+
+The *Measurement source* menu chooses who measured the headphones and how —
+for example Oratory1990 or Rtings. Different measurements give different
+corrections. Crinacle measurements are excluded from this catalog because
+they are not available for redistribution.
+
+Each measurement uses AutoEq's published, precomputed parametric correction.
+Choose another compatible entry in *Target curve* to compute an alternative
+correction locally. The browser credits Jaakko Pasanen and AutoEq, and names the
+measurement source for the selected profile. *Import by Hand…* remains available
+for corrections created on autoeq.app.
+
+Selecting a model or measurement plays a preview after a short pause,
+without saving anything, so you can hear it against your own music. *Cancel*
+puts the previous sound back. *Import* converts the correction and keeps it as
+one of your own presets, named after the model, where it can be edited and
+exported like any other.
+
+Closing the catalog and opening it again returns to where you were: the same
+model, measurement and target, with the correction's curve drawn, and the same
+search — or the model's name, if that search no longer lists it. It does not
+play by itself — press *Play Preview*, click the model again, or choose
+something else.
+
+The catalog never refuses a correction eqR can represent. When saving one
+would change it to fit eqR, the browser says so, and *Import* opens the same
+confirmation sheet the manual imports use: each changed value with its response
+impact, and the choice to keep it exact or clip a beyond-slider bell back into
+the graphic range. If another filter occupies that slider, the clipped bell
+remains a free filter at ±12 dB. Impact is measured at the active device rate.
+The preview you hear is the correction kept exact, and a
+correction that needs no change imports without a sheet.
+
+No catalog or profiles are bundled with the app. Opening the AutoEq sheet for
+the first time downloads the catalog and shows a progress bar; Cancel stops
+the download and closes the sheet. Individual corrections download when
+selected and are cached for later offline previews. A correction that has not
+been downloaded still needs a connection; saved presets work independently.
+
+eqR checks for catalog updates when the sheet opens if the cache is at least
+seven days old. The catalog and its profiles use the same Git commit so an
+update cannot mix old and new corrections. If an update fails, eqR keeps
+the saved catalog and offers *Try Again*. With no network and no cached
+catalog, the sheet offers *Try Again* or manual import.
+
+Correction data comes from AutoEq by Jaakko Pasanen, used under the MIT licence;
+each result names the measurement source it came from.
+
+* Automatic gain
+
+The preamp computes itself, and does so by default. Boosting makes a preset
+louder, and louder always sounds better — which would make every comparison a
+loudness test rather than a tone test. With *Auto* on, the trim follows the
+chain and holds the preset at the loudness it started from, so what you hear
+when you compare two presets is the shaping.
+
+It is measured as the average lift across the audible range, weighted equally
+per octave. A preset that lifts one narrow band is corrected gently; one that
+lifts everything is corrected hard. Built-ins arrive with fixed preamps chosen
+to keep peaks below full scale, while Flat keeps Auto on.
+
+The correction only ever attenuates. Cancelling a *cut* would mean raising
+every frequency the preset deliberately left alone, which is a way to make
+something clip that would not have clipped otherwise — so a preset that mostly
+cuts is left quieter, as it was meant to be. To set the trim by hand,
+drag the preamp slider: that switches *Auto* off, below it. Click *Auto* to
+hand the trim back, or double-click the slider to return to the preset’s own
+trim, as a band’s double-click returns it to the preset.
+
+eqR has no volume control. Its one level control is the *preamp*, which is
+the same thing a hardware equalizer calls Level: makeup gain for what the curve
+took away. Volume belongs to macOS, which offers it in the menu bar, on the
+keyboard, and in Sound settings.
+
+* A/B comparison
+
+Two working states of one preset, switched from the header. Each holds a
+complete sound — the preset, the chain, the trim, and the tone — so A/B compares
+two versions rather than undoing one, and the pair belongs to the output device
+like everything else you have not saved. Reaching for the other slot the first
+time changes nothing: it starts as a copy of what you were hearing, and the first
+difference is one you made.
+
+* Per-device settings
+
+The preset in use, any unsaved edits to it, and the preamp follow the *output
+device*, the way volume does on macOS. Your headphone curve comes back when you
+plug in headphones and gives way to the speaker curve when you unplug them. The
+preset library itself is shared across devices.
+
+* Settings
+
+A gear in the window's header, or *Settings…* in the menu. Four tabs:
+*General*, which holds the *Appearance* theme — *TokyoNight*, eqR's nocturnal
+palette applied across all application surfaces (the main window sidebar,
+curve, sliders, and controls, as well as settings, sheets, and menu bar extra
+elements), the default — or *System*, which follows macOS's light and dark
+appearance and system control accents — alongside *Open eqR at login*,
+*Release the audio device when nothing is playing*, *Pause while recording system
+audio*, and the status of the System Audio Recording permission; *Exclusions*,
+the apps eqR leaves alone (see [[*Leaving apps out][Leaving apps out]]); *Diagnostics*, a report of the
+audio setup to copy into a bug report; and *About*. Clicking the eqR mark at
+the top of the sidebar opens About directly.
+
+* Recordings and other audio tools
+
+A screen recording that captures system audio hears each app's original sound
+and eqR's equalized copy 27 ms later, which sounds like an echo. So eqR
+pauses itself while such a recording runs, and says so on the graph and in the
+menu; *Pause while recording system audio* in Settings → General turns this
+off. The first second or so of a recording can still be doubled — switch eqR
+off before recording if the start matters.
+
+eqR recognises recordings made through macOS's own screen capture, which is
+what screen recorders and screen sharing in calls and browsers use. Recording
+from a microphone is left alone, because it hears eqR only once, through the
+air, and so are Siri, dictation, and other apps that listen to the microphone.
+A recorder that captures system audio another way — through a virtual device
+such as BlackHole — is not recognised; switch eqR off while using one.
+
+Another tool that re-routes system audio, such as SoundSource, can double the
+sound the same way when both run at once.
+
+* Leaving apps out
+
+Some apps should be heard exactly as they are — a DAW while mixing or
+mastering, for one. Settings → *Exclusions* lists the apps eqR leaves alone:
+their sound goes straight to the output and never passes through eqR, while
+everything else stays equalized. This is not the same as a Flat preset, which
+still takes the sound in and plays it back.
+
+*Add…* chooses an app from the disk, so it can be excluded before it is even
+open. Each listed app has a switch. Switched off, it stays on the list but is
+equalized again, ready to switch back on. Select an app and click *Remove*, or
+press Delete, to take it off the list. A change applies at once, with a
+moment's break in the sound while eqR rebuilds. An excluded app stays
+excluded when it quits and is opened again.
+
+Browsers can't be excluded. They play through a helper process that macOS
+shares between apps, so leaving Safari out would mean leaving out every app
+that shows web content. Apps that play their own sound — DAWs, music players,
+video players — work.
+
+Exclusion needs macOS 26 or later. On earlier versions the tab says so, and
+every app is equalized.
+
+* How it works
+
+A global process tap captures the mixed output of every application, equalizes
+it, and plays it back through the current output device. No =/Library/Audio=
+component, no reboot, no per-application setup. Quit eqR and system audio
+returns to its normal path immediately.
+
+You can check this yourself. Audio drivers live in one folder:
+
+#+begin_src sh
+ls /Library/Audio/Plug-Ins/HAL
+#+end_src
+
+List it before and after installing eqR: nothing is added. Anything there
+was installed by other software, such as BlackHole. The device eqR builds
+while it runs is private to the app, so it does not appear in Audio MIDI Setup
+either.
+
+The engine rebuilds itself when the default output device changes, when the
+sample rate changes, and after the machine wakes from sleep. Recoverable failures
+back off to one retry every 30 seconds rather than giving up; permission and
+unsupported-device problems wait for an appropriate change. A render-progress
+check also detects stalled callbacks while other audio is playing.
+
+Bypass remains an immediate passthrough flag. Parameter changes use sample-based
+ramps and filter crossfades rather than callback-sized gain steps. The DSP adds
+no lookahead or extra audio buffering; this does not remove the latency already
+introduced by macOS, the output device, or Bluetooth. Peak protection uses one
+linked gain for the stereo pair, so overload does not independently flatten each
+channel. Unexpected peaks can still cause gain-reduction distortion: zero
+lookahead cannot provide transparent protection against every transient.
+
+* Limitations
+
+What eqR does not do, on purpose:
+
+- *No volume control.* macOS already has one, in the menu bar, on the keyboard,
+  and in Sound settings. eqR's only level control is the preamp, which
+  makes up for what the curve takes away.
+- *Not bit-perfect.* eqR works on the system mix, after macOS has mixed and
+  resampled every app's audio. At Flat the sound passes through unchanged, and
+  switched off eqR leaves the audio path entirely, but it cannot give an app
+  exclusive access to the device. The closest it comes is [[*Leaving apps out][leaving an app out]],
+  which keeps eqR out of that app's path altogether.
+- *One curve for all channels.* On outputs with more than two channels (HDMI,
+  DisplayPort, USB interfaces) every channel is equalized, with the same curve.
+  There are no per-channel curves and no room correction.
+
+And what it cannot do yet:
+
+- Aggregate and Multi-Output Devices are not supported. Core Audio will not
+  nest one aggregate device inside another, so eqR refuses them and names the
+  device and the reason rather than failing silently.
+- On a device eqR cannot capture stream by stream it falls back to a stereo
+  mixdown, and channels beyond the pair the device calls stereo are silent.
+  Settings → Diagnostics says when that has happened.
+- Screen recordings can be doubled at their very start — see [[*Recordings and other audio tools][Recordings and
+  other audio tools]].
+
+* The audio permission
+
+eqR asks macOS whether it is allowed to process system audio, and says only
+what applies. The same card appears over the response graph, in Settings →
+General, and as a row in the menu bar.
+
+| What eqR says                              | What it means                                         | The button                                                                                       |
+|-----------------------------------------------+-------------------------------------------------------+--------------------------------------------------------------------------------------------------|
+| eqR needs to reach the sound to change it   | macOS has not asked yet, or eqR was just updated   | *Allow…* shows the macOS prompt                                                                  |
+| eqR isn’t allowed to reach the sound        | The permission was refused                            | *Open System Settings*; turn eqR on there, then choose *Quit & Reopen* (or *Relaunch eqR*)  |
+
+eqR never builds its audio path before the answer is yes.
+
+macOS settles the permission when an app starts. Switching eqR on or off in
+System Settings does nothing for the copy already running — macOS offers to
+quit and reopen it — so a change takes effect on the next launch.
+
+* Troubleshooting
+
+*The fastest route to an answer is the diagnostics report*, in Settings →
+Diagnostics → Copy. It names the output device and what eqR built around
+it, whether audio is reaching eqR, how often the engine has restarted and
+why, and whether the output clipped. Once you have opened the AutoEq catalog,
+it also names the catalog version eqR has cached and why the last load
+failed, if it did. Attach it to any bug report.
+
+- *eqR says it isn’t allowed to reach the sound.* Allow eqR under Screen &
+  System Audio Recording in System Settings → Privacy & Security, then choose
+  *Quit & Reopen* when macOS asks, or *Relaunch eqR* on the card.
+- *The permission is on in System Settings and eqR still hears nothing.*
+  Turn eqR off and on again in System Settings and relaunch it, or clear its
+  entry from Terminal and relaunch it, which makes it ask again:
+  =tccutil reset AudioCapture com.eqr.eqr=
+- *No sound, or something sounds wrong, and you want to rule eqR out.* Switch
+  it off, or quit it: system audio returns to its normal path immediately.
+- *A screen recording has an echo.* See [[*Recordings and other audio tools][Recordings and other audio tools]].
+- *An output device is refused.* Aggregate and Multi-Output Devices are not
+  supported yet; choose a single output device.

@@ -1,0 +1,146 @@
+import AppKit
+import SwiftUI
+
+/// What eqR sees, in one copyable block.
+///
+/// This pane exists because of how the audio defects in this app get reported:
+/// someone says "no sound on my interface", and working out why has meant
+/// guessing at what their device presents. The facts that settle it are all
+/// readable in a few milliseconds — the device's channel layout, its streams,
+/// which tap the engine got, where it put the channels — so the person hitting
+/// the bug can send them instead of a description.
+struct DiagnosticsSettingsView: View {
+    @ObservedObject private var bridge = EngineStatusBridge.shared
+    @ObservedObject private var profiles = ProfileStatusBridge.shared
+
+    @State private var report = ""
+    @State private var didCopy = false
+    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Audio Diagnostics")
+                .font(Theme.Font.heading)
+                .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.fg : .primary)
+
+            Text(
+                "What eqR sees on this Mac. Include it with a bug report: it answers most questions about audio problems. It names your audio devices, your presets, and any apps you’ve excluded, and contains nothing else about you."
+            )
+            .font(Theme.Font.label)
+            .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+            ScrollView([.horizontal, .vertical]) {
+                Text(report)
+                    .font(Theme.Font.report)
+                    .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.fgDark : .primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(6)
+            }
+            .background(
+                themeMode == "TokyoNight"
+                    ? Theme.TokyoNight.bgDark : Color(nsColor: .textBackgroundColor)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(
+                        themeMode == "TokyoNight"
+                            ? Theme.TokyoNight.border : Color(nsColor: .separatorColor))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+
+            HStack {
+                Button(
+                    didCopy
+                        ? String(localized: "Copied", comment: "Diagnostics: the report was copied")
+                        : String(localized: "Copy", comment: "Diagnostics: copies the report")
+                ) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(report, forType: .string)
+                    didCopy = true
+                }
+                .disabled(report.isEmpty)
+
+                Button("Refresh") { refresh() }
+
+                Spacer()
+            }
+        }
+        .padding(16)
+        .background(WindowBackground())
+        .onAppear(perform: refresh)
+        // The engine republishes when it restarts — on a device change, or after
+        // wake — and a report describing the previous device would be worse than
+        // no report at all.
+        .onChange(of: bridge.diagnostics) { refresh() }
+        .onChange(of: profiles.activeProfileName) { refresh() }
+        .onChange(of: profiles.abSlot) { refresh() }
+        .onChange(of: profiles.deviceListUpdates) { refresh() }
+    }
+
+    private func refresh() {
+        didCopy = false
+        report = DiagnosticsReport.text(
+            appVersion: Self.appVersion,
+            systemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            permission: bridge.tapAccess,
+            canAskMacOS: AudioCapturePermission.isAvailable,
+            devices: AudioDevices.deviceReports(),
+            engine: Self.liveEngine(bridge.diagnostics),
+            profiles: Self.profiles(live: profiles),
+            autoEQ: AutoEQStatusBridge.shared.diagnostics
+        )
+    }
+
+    /// Read straight from the store rather than from `ProfileManager`, which
+    /// this scene cannot reach. The store is the thing that actually decides
+    /// what survives a relaunch, so it is also the right thing to report.
+    private static func profiles(live: ProfileStatusBridge) -> DiagnosticsReport.Profiles {
+        let settings = SettingsStore()
+        // The manager's own idea of the device, not the system's: if those two
+        // ever disagree that is itself the bug, and reporting the system's would
+        // hide it.
+        let uid = live.outputDeviceUID
+        let stored = settings.deviceStates[uid ?? ""]
+        return DiagnosticsReport.Profiles(
+            currentDeviceUID: uid,
+            savedSlots: settings.deviceStates.keys.sorted(),
+            storedProfileName: stored?.profileName,
+            storedSlot: stored?.liveSlot.label,
+            liveProfileName: live.activeProfileName,
+            liveSlot: live.abSlot?.label,
+            deviceListUID: live.deviceListUID,
+            deviceListUpdates: live.deviceListUpdates,
+            systemDeviceUID: AudioDevices.defaultOutputDeviceID()
+                .flatMap(AudioDevices.persistentID(of:))
+        )
+    }
+
+    /// The engine's snapshot, with the facts that go stale refreshed.
+    ///
+    /// The snapshot is taken when the engine starts, and at that moment the tap
+    /// has by definition delivered nothing and no route has changed. Reporting
+    /// either from there would say "no audio seen" and "no rate window" forever.
+    private static func liveEngine(
+        _ snapshot: DiagnosticsReport.Engine?
+    )
+        -> DiagnosticsReport.Engine?
+    {
+        guard var snapshot else { return nil }
+        snapshot.hasReceivedAudio = EngineStatusBridge.shared.hasReceivedAudio
+        snapshot.rateWindow = EngineStatusBridge.shared.rateWindow
+        snapshot.uptime = EngineStatusBridge.shared.uptime
+        snapshot.restarts = EngineStatusBridge.shared.restarts
+        snapshot.level = EngineStatusBridge.shared.level
+        snapshot.idling = EngineStatusBridge.shared.idling
+        snapshot.aggregatesAlive = AudioDevices.eqRAggregateCount()
+        return snapshot
+    }
+
+    private static var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(short) (\(build))"
+    }
+}

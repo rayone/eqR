@@ -1,0 +1,345 @@
+#+TITLE: eqR Roadmap
+#+SUBTITLE: Fix what is broken, then open the format, then open the scope
+#+DATE: <2026-10-18 Sun>
+#+OPTIONS: toc:2 num:nil
+
+Where eqR goes after 1.10, and why in this order. Everything here comes out
+of what people asked for and reported after the app was posted publicly; the
+shape of the filter chain the later releases build on is in [[file:ARCHITECTURE.org][ARCHITECTURE.org]].
+
+The ordering rule is simple. A defect that makes the app produce no sound
+outranks the most-asked-for feature, and both outrank a feature that
+widens what the app is. So: 1.8 fixed, 1.9 opened the preset format, and 1.10
+opened the scope only as far as leaving apps out, with the AutoEq catalog
+alongside. All three plans are done. What is left is the two defects that have
+not been reproduced, below, and then *Later*. One chain per application is
+there, until it is asked for on its own.
+
+Dates are deliberately absent. This is a project I wrote for myself and put on
+GitHub because it turned out to be useful to other people; the order is a
+commitment, the schedule is not.
+
+What is already fixed moves to [[file:RELEASE_NOTES.org][RELEASE_NOTES.org]] rather than staying here marked
+done. This document is what is still owed, so that its length means something.
+
+* Still open — Make it work everywhere it claims to
+
+Public feedback produced three defects that are not edge cases, and chasing the
+first turned up two more that nobody had reported. Three of the five are fixed
+and have moved to [[file:RELEASE_NOTES.org][RELEASE_NOTES.org]]: audio broken on multichannel outputs, an
+Aggregate or Multi-Output Device silencing the Mac outright, and a refused
+permission doing the same while every layer of the app reported success. A
+fourth suspicion — that a Bluetooth route change left a window of audio filtered
+at the wrong sample rate — was measured and turned out not to happen; it is in
+the release notes with the numbers.
+
+1.8 shipped on <2026-09-20 Sun> with the five above settled and the rest of this
+section still open. 1.9 shipped on <2026-10-01 Thu> and settled two more:
+screen recordings that captured the sound twice, and the documentation that
+answered the same questions one comment at a time. Both have moved to
+[[file:RELEASE_NOTES.org][RELEASE_NOTES.org]], with the preset format 1.9 was for.
+
+1.10 settled none of what is left, and was not meant to: it shipped the scope
+1.10 was planned for — leaving apps out — and the AutoEq catalog, both in
+[[file:RELEASE_NOTES.org][RELEASE_NOTES.org]].
+
+What is left here: an echo after waking that has not been reproduced, and a
+report of noise over Bluetooth. They affect people doing nothing unusual, so by
+the ordering rule they still head the next release.
+
+Also for the next release, and not visible to anyone using the app: the review
+before 1.10 left the largest files alone rather than split them days before a
+tag — =AudioEngine= at about 1,600 lines, =ProfileManager= at 1,000, and the
+AutoEq browser, the main window's detail and sidebar views, and the menu bar
+controller at 750–870 each. Splitting them along the seams they already have
+is the first piece of work after 1.10, before anything new is added to them.
+The first new thing after that is Shortcuts, under *Later*: small, and
+touching none of the audio path.
+
+** Bluetooth noise at higher volume
+
+One report, unresolved: a Soundcore Q20i picking up noise around 40% volume.
+
+Clipping is the first hypothesis and the cheapest to rule out, since =AutoGain=
+corrects the *average* of the chain response and never boosts — by design, and
+documented as such — so it removes the systematic part of the headroom problem
+without guaranteeing clipping away. The mix level arriving at a tap is
+unknowable from inside it. If the noise is also present at Flat, it is not
+clipping and needs a real investigation.
+
+*Measured, and attributed — but not shown on screen.* An on-screen warning was
+built and then taken out again. Two things decided it.
+
+The first was accuracy. It counted any output sample above full scale, and so it
+fired at Flat with Auto, which is the default state. At Flat every band is 0 dB,
+which =Biquad.isActive= maps to identity, so the chain is skipped and eqR
+passes audio through bit for bit; the system mix is Float32 and is not clamped
+before a tap sees it, so material arrives over full scale on its own — lossy
+codecs overshoot, resampling reconstructs peaks above the samples that made
+them, and modern masters sit at the ceiling to begin with. The warning was
+blaming the app for the recording, and pointing at a preamp that Auto had
+disabled.
+
+That part is fixed and kept: a sample only counts when the chain lifted it past
+both full scale *and* the level it arrived at, measured where =BufferRouter=
+copies the source, so it costs nothing and reads exactly the samples that become
+the output. The report carries both peaks, and says so when the material itself
+arrived hot.
+
+The second was whether to show it at all. Preventing this is the convention for
+consumer equalizers — AutoEq ships a preamp with every profile for exactly this
+reason — and eqR already prevents it with =AutoGain=, on by default. A clip
+light is the *professional* convention, and it belongs on an output meter, which
+this app does not have. It would be seen rarely, by users who had never seen it
+before, in an app whose case for existing is that it is simple. So the
+measurement stays and the badge does not.
+
+*The report also answers this without a round trip.* The render path keeps the
+largest magnitude it has produced since the engine started and counts the
+samples that did not fit, and the diagnostics report carries both — =peak
+output: 0.71, no clipping=, or the peak with a count and what to do about it.
+Until now the only way to tell was to ask the reporter to switch to Flat and
+come back, which is two exchanges to answer a question their own machine
+already knew. Next time this is reported, ask for the report first.
+
+** Echo and doubled audio
+
+Two symptoms that sound like one another are left of the three this began with:
+
+- Running alongside SoundSource produces a flangey delay.
+- After waking from sleep, audio sometimes plays with an echo.
+
+The third — screen recordings with “a Doppler echo delay” — was measured and
+answered in 1.9, and is in [[file:RELEASE_NOTES.org][RELEASE_NOTES.org]]. The recorder hears each app's
+sound and eqR's equalized copy of it; nothing loops, and nothing leaked.
+
+A fourth symptom was listed here — the Audio4C reports where sound starts and
+then vanishes — and has been removed. It was the channel layout bug in
+*Multichannel outputs* above, not doubling, and is fixed. It is named here so
+nobody reads it back as evidence for this item.
+
+The SoundSource case has an easy story: two processors in one path, so the
+signal arrives twice slightly offset. The wake-from-sleep case does not — no
+second tool is involved, so something on eqR's side is producing two copies
+of the audio by itself. The likely shape is an IO proc or an aggregate device
+that survives a state change it should not have survived, leaving two of them
+running. That would explain the echo after wake.
+
+The feedback shape is not hypothetical, and it is worth writing down because it
+was observed accidentally. While verifying the multichannel work, a test harness
+tapped system audio and wrote its own output back to the same device without
+excluding itself from the tap. It captured what it had just written, and the
+level compounded across the run — a 0.4 peak measured 1.56, then 26, then 71.
+=AudioEngine= excludes its own process for exactly this reason, and since 1.9
+refuses to build a tap at all when it cannot identify that process — the lookup
+used to fail silently, which the release notes record.
+
+What is left is the wake case:
+
+- Audit the teardown and rebuild path around sleep, wake, and device changes,
+  and confirm exactly one IO proc is ever running. The report names how many
+  restarts a session has had, why the last one happened, and how long ago, and
+  since 1.9 how many eqR aggregates are alive — more than one is
+  two paths rendering the same audio. On the development machine it reads one,
+  including across the rebuild that follows proving the tap.
+
+  *Not reproduced.* One sleep and wake on a MacBook Pro's built-in speakers,
+  macOS 27.0.1, at Flat — the preset where two copies would be loudest —
+  played clicks and music clean afterwards. The report agreed: one restart,
+  =system woke from sleep=, one aggregate alive, capturing and muting, peak in
+  equal to peak out. So neither suspect showed: no path survived the rebuild,
+  and the tap did not hear eqR.
+
+  One clean cycle does not settle a report that says “sometimes”. Still worth
+  running: audio playing into the sleep, so playback resumes while the path is
+  rebuilt; a sleep of ten minutes or more, long enough for the hardware to be
+  powered down; and Bluetooth headphones, whose route is renegotiated on wake.
+  Until then, the next echo report settles it, as long as the diagnostics
+  report comes with it: =audio paths= above one is a leaked path, the
+  self-exclusion error is a tap that could not leave eqR out, and an echo
+  with neither points somewhere not yet looked at.
+
+* Later — worth doing, not yet scheduled
+
+** Shortcuts
+
+Actions for the Shortcuts app, through App Intents, which macOS also offers in
+Spotlight and as Focus filters at no extra cost. Next after the file split, and
+deliberately small.
+
+Where it earns its place:
+
+- *Turning the EQ off and on from the keyboard.* Shortcuts can bind any
+  shortcut to a global key, so a toggle gives an instant A/B against the
+  untouched sound without opening the menu. The strongest case of the lot.
+- *Focus filters.* A Work focus picks a flat preset, a Gaming one a V shape: a
+  rule eqR does not have, which the system then owns, with no settings pane
+  to build.
+- *Automations.* On macOS 26 Shortcuts runs them on the Mac — at a time, when an
+  app opens, when a display connects — so whatever the actions expose can be
+  scheduled without eqR growing rules of its own.
+- *Scripting.* =shortcuts run= from a shell, Raycast, or Alfred.
+
+Where it adds little, and why the set stays small: a preset per output device
+already covers the commonest automation anyone would build (“when my headphones
+connect, use this”), and leaving an app out is exclusion, which works per
+process and is better than switching the whole EQ when the app opens.
+
+The first set, three actions:
+
+1. *Turn EQ on, off, or toggle.*
+2. *Set preset*, chosen from the user's presets, optionally for a given output
+   device.
+3. *Get the current preset and whether the EQ is on*, so a shortcut can branch.
+
+The A/B slot is a fourth if it is asked for.
+
+What it costs and what it risks:
+
+- App Intents needs macOS 13, inside the 14.2 floor. Actions run inside the
+  running app, which suits a menu bar app, and can launch it in the background
+  when it is not running.
+- The work is the preset list for the picker, and routing each action through
+  the same calls the menu bar makes, so the menu, the window, and Shortcuts
+  cannot disagree about what happened. The actions stay thin; the tests cover
+  the managers they call. Their names go in the String Catalog.
+- None of it touches the audio path. The real risk is that it is public
+  surface: once people have built automations on an action, renaming or
+  removing it breaks them. Another reason to start with three.
+
+** Lower latency
+
+One report (#55): a DJ playing Rekordbox's master through the Mac's speakers
+and cueing on headphones plugged into the controller hears the two drift apart
+by a few milliseconds, and switching eqR off fixes it. The speakers go
+through eqR and the controller does not, so the master arrives late against
+the cue. That is invisible when listening and obvious when beatmatching by ear.
+
+The filters add no delay of their own. The route does: the tap delivers each
+cycle's audio to the IO proc one cycle late, and drift compensation on the tap
+buffers on top of that. The aggregate's buffer size is never set, so it runs at
+the system default — at 512 frames and 48 kHz, about 10.7 ms a cycle. None of
+this has been measured yet.
+
+The answer today is exclusion: leave Rekordbox out and its sound goes straight
+to the device, at the cost of not being equalized.
+
+What to try, measured with a loopback before and after:
+
+- *A smaller buffer on the aggregate.* Set =kAudioDevicePropertyBufferFrameSize=
+  to 128 or 64 frames after it is created. Shrinks the delay, never removes it.
+  Costs more wakeups and a higher risk of dropouts under load, so it may belong
+  behind a setting rather than as the default. It does nothing for Bluetooth,
+  whose own delay is far larger.
+- *Drift compensation off.* The tap and the output are the same device on the
+  same clock, so compensation may be buffering for nothing. A guess until it is
+  measured, and any change to how the aggregate is built goes near the rebuild
+  path that hung =coreaudiod= in #27.
+
+Zero is not on offer. The tap is a cycle behind by construction; anyone who
+needs sample-accurate alignment between eqR's output and another device's
+should exclude the app.
+
+** Per-application EQ and volume
+
+Asked for repeatedly, on Reddit and as GitHub issues; one request puts the
+appeal well: per-app volume “would really compliment the eq feature”. Most of
+what was asked for under that heading was really exclusion — leave this app
+alone — which shipped in 1.10 (see [[file:RELEASE_NOTES.org][RELEASE_NOTES.org]]) without any of what follows.
+
+A curve per app is a bigger change than this document once said. It was
+described here as a state-model and UI question, not an audio-path one, because
+=CATapDescription= takes a process list. But one tap delivers its processes
+already mixed, so a chain per app means a tap per app, each filtered on its own
+and summed in the render callback: more Core Audio objects to keep consistent
+through device changes, sleep and launches, which is where 1.8's defects lived.
+
+What would have to be decided:
+
+- How a per-app chain relates to the global one. Replace, or stack on top.
+- How profiles bind to an application rather than a process. On macOS 26 the
+  tap's bundle identifiers and process restore answer this, as they do for
+  exclusion.
+- Whether per-app implies a mixer view, and how that stays an app someone opens
+  to make their music sound better rather than becoming an audio workstation.
+
+Per-app *volume* rides along: a gain stage on a chain that would then exist.
+
+** Rendering through Aggregate and Multi-Output Devices
+
+Refusing them with a clear message is honest, but it is still a no, and the 1.8
+fix above changes only what the app does about not being able to.
+
+Supporting them, without giving up the driver-free design, means not wrapping
+the user's aggregate at all: read its sub-device list and build an equivalent
+*flat* aggregate out of those leaf devices directly, carrying over the main
+sub-device, the drift compensation, and whether it is stacked. Nesting is the
+only thing Core Audio prohibits; the leaves are ordinary devices. Measured:
+rebuilding the same aggregate from its own leaves gives two active sub-devices
+and a real output layout, where nesting gave zero of both.
+
+The two kinds then split, and unevenly:
+
+- *Multi-Output Devices* need nothing further. Rebuilt as a stacked aggregate,
+  Core Audio does the duplication internally and presents =1 buffer(s) [2ch]= —
+  plain stereo, which the render path already handles. This is both the larger
+  population and the cheaper half.
+- *Aggregate Devices* concatenate their sub-devices' channels, so a flat rebuild
+  of two stereo devices presents four. That needed the multichannel layout work
+  above, which is now done, so this is unblocked as well.
+
+The open risk is whether two aggregates can run against the same leaf devices at
+once. Creation succeeds while the user's own aggregate exists and holds them;
+whether both can be *started* has not been tested, and that is the question that
+decides the design.
+
+** A/B comparison export
+
+Both slots already hold complete states, so writing out both curves and their
+settings is mostly plumbing. Suggested by someone who has built the feature
+elsewhere and offered to help.
+
+** Live waveform view
+
+There is already an FFT feeding the spectrum analyser; a time-domain view is a
+second read of the same buffer, tied to the A/B toggle.
+
+** Preset recommendation
+
+“Please recommend a configuration or built-in option” read two ways: tell me
+which to pick, or pick for me. The 1.9 preset descriptions answer the first
+cheaply. The second needs the app to know the device and the material, which is
+worth thinking about rather than guessing at.
+
+* Not planned
+
+Stated here so the answer is written down once.
+
+- *Bit-perfect passthrough.* A process tap sits after the system mixer by
+  definition, so the honest maximum eqR can offer is getting out of the path
+  entirely, which bypass already does — and, since 1.10, per app, by leaving it
+  out of the tap. Real bit-perfect means hog mode and exclusive device access,
+  which is a different application. Better to not claim it than to half-claim
+  it.
+- *Global volume control.* macOS already has one. eqR adjusts tone.
+- *HRTF.* Raised once with no detail. Large, and a different product from an
+  equalizer.
+- *A standalone audio-tap-to-file tool.* Suggested as an unmet need, and the tap
+  plumbing here is most of the work, but it is not this app.
+- *iOS.* The process-tap API is macOS-only, so this is not a port.
+
+* How this was chosen
+
+Three sources, each read through in full: the r/MacApps launch thread, from
+people actually running the app; GitHub issues; and the earlier Threads post,
+from people reacting to a screenshot, whose top request — parametric bands —
+shipped in 1.6.
+
+Reddit and GitHub reports are not deduplicated, and probably should not be
+taken as separate voices: someone who hits a bug in the thread is exactly the
+person who then files the issue. Where this document counts anything, it counts
+distinct symptoms or broken configurations rather than people.
+
+The pattern across the feedback is worth keeping in view: the requests cluster around
+the preset *format* and the *scope* of the chain, not around the DSP. The
+filtering is not what people want changed.

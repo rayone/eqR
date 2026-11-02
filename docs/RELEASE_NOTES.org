@@ -1,0 +1,891 @@
+#+TITLE: eqR Release Notes
+#+SUBTITLE: What shipped, and what it cost to find
+#+OPTIONS: toc:2 num:nil
+
+What has actually been fixed, moved here out of [[file:ROADMAP.org][ROADMAP.org]] as it lands. The
+roadmap is what is still owed; this is what has been paid.
+
+Each entry keeps the diagnosis rather than reducing itself to a line of
+changelog. Two of the defects below were never reported by anyone: they were
+found while chasing a third, and both had the same shape — a completely silent
+Mac with every layer of the app reporting that it worked. A fix is easy to
+summarise; how something managed to look healthy while producing no sound is the
+part worth having written down.
+
+* 1.11
+
+Not yet released.
+
+** Continuous DSP transitions and unattended recovery
+
+Filter gain, frequency, Q, kind, enable and removal changes now crossfade between
+preallocated biquad states. Preamp and width changes advance per sample rather
+than stepping once per callback. Queued edits start at exact fade boundaries
+across channels, and resetting after a pause or rate change retains the newest
+settings. A filter becoming identity clears its delay state; restoring gain
+after silence no longer replays a stored transient.
+
+One zero-lookahead output stage replaces independent soft clipping and the
+widener's attack clamps. The front pair shares a sample-peak gain, including
+the first transient, with a 150 ms release. Over-range source audio no longer
+disables protection for the rest of its buffer. Unexpected peaks can still
+distort under instantaneous gain reduction; this adds no lookahead or extra
+audio buffering and is not a true-peak mastering limiter.
+
+Recoverable engine-start failures retry with capped backoff indefinitely instead
+of stopping after three attempts. Audio-service restart notifications and a
+published render-progress counter provide additional recovery triggers. Intentional
+idle and silence without another process playing do not trigger stall rebuilds,
+and queued recovery notifications cannot restart an explicitly stopped engine.
+
+Hidden analyzers stop collecting audio samples as well as stopping the FFT timer.
+The offline spatial comparison now includes output containment before final
+loudness matching, matching the app's widening path.
+
+Verified with the project tests, synthetic signals through the real processor,
+recovery-policy scenarios and an offline spatial render. Physical device hotplug,
+sleep/wake, audio-service fault injection, end-to-end latency, whole-system energy
+and multi-day endurance still require hardware verification; these changes are
+not evidence of an uninterrupted 24/7 guarantee.
+
+** Ten tested presets in place of twenty-two
+
+The built-ins are now Flat plus nine parametric curves taken from
+equalizerapoguide.com's tested Equalizer APO settings, loaded as filters with
+the graphic sliders at 0 dB and fixed preamps that keep every peak under full
+scale. Auto gain was not used for them: it cancels a curve's average lift, and
+these curves cut about as much as they boost, so it would have trimmed almost
+nothing while their peaks sat 2–6 dB over the input. A new *Space* preset
+carries 200% width, a treble shelf, and -6 dB of trim.
+
+Nobody's sound changes on update. A one-time migration
+(=ProfileMigration=) copies any removed or redefined built-in still in use, in
+either A/B slot of any device, into the user's own presets with its old
+values and points the slot at the copy; a user preset whose name a new
+built-in takes is renamed rather than shadowed.
+
+** 3D: one cleaner widener, and no clipping
+
+The widener's ~0.5 ms Haas cross-delay combed the widened treble every 1 kHz —
+about 2.4 dB at 200% — and nudged centred voices left and right as their pitch
+moved, and the split that kept bass centred dipped the side by nearly 3 dB
+around 60 Hz. It is now one high shelf on the side signal: the same +9.5 dB of
+side at 200%, flat through the treble, smooth into the bass, and nothing added
+to what the two channels share, so a mono source stays exactly mono.
+Near-mono recordings no longer pick up the faint widening the delay gave them.
+
+At 200% a sound panned hard to one side comes out 6 dB hotter, and nothing
+stopped it clipping. The widener now turns the pair down by just enough when,
+and only when, a sample would pass full scale; below that it touches nothing.
+
+* 1.10
+
+Released <2026-10-23 Fri>.
+
+** Asking for the audio permission, and knowing the answer
+
+eqR could not ask macOS whether it was allowed to capture system audio, so
+it inferred the answer: a refusal was concluded only after six seconds of audio
+playing with nothing arriving, and on a quiet Mac never. “Not asked yet” and
+“refused” looked the same, so every screen carried the instructions for both.
+And creating the tap at launch raised the macOS prompt before eqR had said
+what the permission was for.
+
+eqR now asks TCC directly (=TCCAccessPreflight=), builds no tap until the
+answer is yes, and opens its window on an explanation with an *Allow…* button
+the first time. A refusal shows the way to System Settings and says what macOS
+does not: the change only reaches eqR after it is reopened. The card offers
+*Relaunch eqR* for anyone who dismissed macOS's own Quit & Reopen.
+
+Updates no longer break the permission silently. When macOS does ask again — as
+it will once on this update, see below — it arrives as the *Allow…* card and one
+prompt, instead of a switch in System Settings that is on and does nothing.
+
+If the private TCC entry point is ever missing, eqR falls back to the old
+inference, and the diagnostics report says the answer was inferred.
+
+** Updates keep the audio permission
+
+Releases were ad-hoc signed, and macOS records an ad-hoc permission against the
+exact binary, so every update was a new app and asked again. From 1.10 releases
+are signed with eqR's own certificate, and the permission is recorded against
+that instead, so it carries over to every later release. Measured with a
+different binary under the same certificate: no prompt, and audio at once.
+
+*You will be asked once more, on this update*, because the signature changes
+kind. After that, updates keep the permission. Gatekeeper is unchanged: the
+certificate is not Apple's, so the first launch of a download still needs
+*Open Anyway* or the =xattr= step in the README.
+
+** Two copies no longer silence the Mac
+
+Found while testing the above. macOS's Quit & Reopen reopens eqR by bundle
+identifier, and it reopened the installed copy while a development build was
+being started by hand. Each copy's tap leaves out only its own process, so each
+muted the other's equalized output and nothing reached the speakers. A copy that
+finds another already running now asks which one to quit before it builds
+anything.
+
+** The AutoEq catalog
+
+Contributed by Sebastian Ullrich in #40, the step past the file import he added
+in 1.9: the *AutoEq* button beside the =+= now searches AutoEq's corrections by
+headphone model, rather than sending you to autoeq.app for a file. Selecting a
+measurement plays it after a short pause, against whatever is playing, without
+saving anything; *Cancel* puts the previous sound back, and *Import* keeps it as
+a preset of your own. Crinacle's measurements are left out.
+
+It is eqR's first network connection, so the roadmap pinned its shape before
+any of it was built: it happens only on explicit action. Nothing is fetched at
+launch or when a device appears. Opening the sheet downloads the catalog, and
+checks it again only once it is a week old; a correction downloads when it is
+selected. Both come from one AutoEq commit, so an update can never mix old and
+new corrections, and both are cached, so a correction heard once previews
+offline. No data is bundled with the app.
+
+The published correction is used as AutoEq wrote it. Choosing another
+compatible *Target curve* computes a correction instead, in the app, with a
+native fitter written for this rather than AutoEq's Python. Run on AutoEq's
+default target across 100 catalog entries, it lands within 0.36 dB RMS of
+AutoEq's own result below 6 kHz at the median, and 1.48 dB at worst, in about
+60 ms. [[file:AUTOEQ_LOCAL.org][AUTOEQ_LOCAL.org]] has the method
+and what it does not reproduce.
+
+Imports keep what they read. 1.9 clamped a value past eqR's limits and
+counted it; now free filters reach ±20 dB, and any value that would still change is listed before
+anything is added — the filter, the old and new value, the limit responsible,
+and what it does to the response in dB. A bell past the ±12 dB of the graphic
+range can be kept exact as a free filter or clipped onto its slider. The same
+sheet serves the catalog, a pasted profile, and a dropped file.
+
+*Done* for published corrections: 100 of them imported with no change at all
+to their response or preamp. Not yet checked across the whole catalog, or for
+alternative targets against an AutoEq reference; both are noted in
+AUTOEQ_LOCAL.org.
+
+** Leaving apps out
+
+Asked for in #20, by a musician who needs Studio One, Logic Pro and the rest of
+a mastering chain heard as they are while everything else stays corrected. A
+Flat preset is not the answer: the sound still enters the tap and comes back.
+Settings → *Exclusions* now lists apps eqR leaves out of the tap altogether,
+so their sound reaches the output without passing through eqR at all.
+
+It needs macOS 26, because that is where the tap learned to exclude by bundle
+identifier, and measured on hardware, that is what makes it work. Excluded by
+identifier, an app is left out whether or not it is running when the tap is
+built, on the device-bound taps as well as the global one. With the system's
+process restore on, it stays out when it quits and comes back; without it, a
+relaunched app was measured back in the tap. Before macOS 26 the same thing
+would mean following every launch and quit by hand — a second implementation
+for a shrinking set of Macs, so the tab says what it needs instead.
+
+*What it cannot do: browsers.* Safari's sound comes from =com.apple.WebKit.GPU=,
+a helper shared by every app that shows web content. Excluding Safari's
+identifier, or the helper's, left the sound in the tap; only the helper's
+process did, and that would exclude Mail and the rest with it. So the tab
+offers only apps that are apps, never helpers inside one, and the guide says
+browsers cannot be excluded. Chromium-based apps play through helpers too, and
+are expected to behave the same; not measured.
+
+*Found in testing: an excluded app is not evidence.* After a launch, eqR
+waits for the tap's first sound before equalizing, and calls the tap broken if
+it stays silent while something plays. With only an excluded app playing, the
+tap is silent by design, and eqR said it was not processing audio; the
+switches then did nothing, because a change only rebuilt a running engine. The
+check now ignores excluded apps, and a change rebuilds after a failure too.
+
+Nothing changes for anyone who excludes nothing: the tap is built exactly as
+before. The diagnostics report lists excluded apps when there are any.
+
+** Narrower bells
+
+Asked for in #41. A parametric bell's Q now goes to 16, about a twelfth of an
+octave, up from 10: narrow enough for the sharp resonances in-ear headphones are
+corrected with, or a single whine. Shelves and pass filters stay at 10, because
+past that a shelf overshoots and a pass filter resonates instead of narrowing.
+
+Not further, deliberately. A narrow boost rings, sounding for about Q / (π f)
+after the music stops: 51 ms at 100 Hz at the new ceiling, against 32 ms at the
+old one. Studio EQs reach 40 or 100; a listening EQ has no use for that. AutoEq's
+published corrections stay below 6 and are unaffected. Imported bells up to 16
+now arrive exactly, and the graph samples every filter's centre, so a bell
+narrower than its point spacing is drawn at the height it is heard.
+
+** Smoother previews in the catalog
+
+Moving from one AutoEq model to the next played your own preset for a moment in
+between: each preview was undone before the next one was applied, so for the
+length of a download the sound went back to the preset underneath, with its own
+trim, and then jumped to the new correction. It sounded like two corrections
+applied one after the other. A preview now replaces the previous one directly,
+and the gains and trim move over the same 50 ms ramp as any other change.
+
+** Finding things
+
+Both searches — presets in the sidebar and models in the catalog — now match
+word by word, in any order, ignoring case, accents and punctuation. “sony mdr
+m1” found nothing, because the name is written “Sony MDR-M1” and the search
+looked for the typed text as one piece. It finds it now, and so do “mdrm1”, and
+“600” for both the HD 600 and the HD600: headphone names are model numbers
+written every way at once. Names where the typed words start a word come first.
+
+Deliberately not fuzzy. Every result contains what was typed, punctuation
+aside, so nothing turns up that cannot be explained; letters-in-order matching
+over a few thousand similar names finds mostly noise.
+
+*Browse AutoEq Catalog…* is also in the =+= menu now, beside New Preset and
+Import, for anyone who looks for it there rather than at the button beside it.
+
+** The main window
+
+- *The editor follows the point you click.* The graph carries two kinds of
+  point — round handles for the graphic bands, numbered nodes for the
+  parametric ones — and nothing said where each one's settings were. Clicking
+  or dragging a node now shows the Parametric tab with its row selected; a
+  handle shows the Graphic tab. Hovering never switches.
+- *The preamp can be dragged with AUTO on.* It sat greyed out with no sign why.
+  Dragging it now turns AUTO off and takes the trim over; double-clicking puts
+  it back to the preset's own value, or back to AUTO for a preset that uses it,
+  the way a double-click on a graphic band returns it to the preset.
+- *The band list no longer comes up empty.* Scrolled down a long parametric
+  preset, then switched to a shorter one, the list kept its old position past
+  the end of the new content and showed nothing. It starts from the top on a
+  preset change.
+- The band list fills the editor's height, and the frequency field is wide
+  enough for “19999.9 Hz”.
+
+** Interface text in one place
+
+Every string the interface shows is now in a String Catalog, written to one
+guide modelled on how Apple writes for macOS ([[file:STRINGS.org][STRINGS.org]]), and every existing
+string was reviewed against it. Nothing is translated yet; this is what a
+translation would start from, and what keeps the wording consistent in the
+meantime. Log messages and the diagnostics report stay in English, because they
+are read alongside the source.
+
+** Diagnostics
+
+The report has a short AutoEq section once the catalog has been used: the
+catalog's revision and when it was last checked, how many models it lists, how
+loading went this session — with the reason, when it failed — and the size of
+the cache. A “the catalog won't load” report now says why without a second
+round of questions.
+
+** 3D widening at maximum is audible
+
+Reported by a user: dragging the 3D slider from 100% to its maximum changed
+nothing they could hear, at any setting.
+
+The widener works in mid/side: it expands the difference between the channels
+and leaves what they share alone. The arithmetic measured its expansion against
+the wrong reference. The direct side term was multiplied by the width itself
+(=sideHigh × w=), so the sound at 100% was already the amount 200% was being
+compared against — dragging the slider scaled what was already playing instead
+of adding to it. Measured against the input, the whole upper half of the slider
+was worth about 2 dB; a control can move through eight times that range and stay
+below what an attentive listener notices on programme material.
+
+*Fixed.* The direct side now starts at its natural amount and the slider adds
+against that anchor (=sideHigh × (1 + 2(w−1))=, plus the existing Haas taps):
++6 dB of side at 200%, and a clearly audible image change from the first notch
+past 100%. The Haas cross-delay keeps a modest widening on nearly-mono
+material, where there is almost no side to expand — the case the report most
+likely came from — while leaving the mid channel itself untouched. 100% remains
+bit-for-bit unchanged, and a regression test pins the doubling the law promises.
+
+* 1.9.2
+
+Released <2026-10-02 Fri>.
+
+The fix below was first tagged as 1.9.1, before the project's version had been
+set, and that build named itself 1.9. Release immutability then reserved the
+tag, so it ships as 1.9.2 instead; there is no 1.9.1.
+
+** Siri listening read as a recording
+
+Reported on a second Mac the day after 1.9 shipped: eqR always said
+“Paused while recording” whenever anything played, with nothing recording.
+
+1.9 recognised a recording by how it looked: a process capturing audio from no
+input device was taken to be reading a tap, which is system audio. On that Mac,
+=corespeechd= matched — the service that listens to the microphone while
+“Listen for Siri” is on, and that also serves dictation and Live Captions. It
+captures continuously and reports no input device, exactly as a tap does. With
+*Pause while recording system audio* on by default, every Mac listening for Siri
+stopped equalizing the moment it played anything, and told its user the wrong
+reason. This Mac had Siri listening off, which is why it never showed here.
+
+The rule was a guess about appearance, and the one thing it had actually been
+measured against was =replayd=, the ScreenCaptureKit service that captures on
+behalf of every screen recorder and screen-sharing app. =replayd= captures for
+exactly as long as an audio recording runs, and not for a video-only one.
+
+*Fixed.* A recording is =replayd= capturing — who is capturing, not how the
+capture looks. The rule is shorter than the one it replaces, and no listening
+service macOS adds can trip it. What it no longer claims to see is a recorder
+that taps system audio directly rather than through ScreenCaptureKit, which
+the old rule was meant to catch and was never shown to.
+
+* 1.9 — Open the preset format
+
+Released <2026-10-01 Thu>.
+
+The most requested feature by a clear margin, asked for from four directions —
+AutoEQ, EqualizerAPO, Wavelet, and “EQ txt files” — all of which describe the
+same file. Alongside it, the half of *Echo and doubled audio* that could be
+measured, and two defects found on the way.
+
+** Import and export
+
+Contributed by Sebastian Ullrich in #25, and followed up in #28.
+
+AutoEQ's parametric export is a preamp and a frequency, gain and Q per filter;
+EqualizerAPO reads the same text, and Wavelet ships the same database, so one
+parser answers every request in the thread. The chain already expressed what
+the format says — free filters anywhere from 20 Hz to 20 kHz with Q from 0.1 to
+10, and a preamp that maps onto the output trim — so the work was the parser, a
+way in, and the three decisions the format forces:
+
+- *More than sixteen filters.* Truncated by significance rather than refused:
+  pass filters are kept first, then the strongest by gain, in their original
+  order, and the preview says how many were dropped.
+- *Values past eqR's limits.* Clamped, and counted in the preview — ±12 dB of
+  gain and preamp, 20 Hz to 20 kHz, Q 0.1 to 10. Values in a =.coreeq= file
+  were always clamped, but silently; they are counted too now.
+- *Replace or stack.* Replace. A correction curve is a complete statement about
+  the headphone, not an adjustment to whatever was on the ladder.
+
+What reads it: =Preamp:=, and =PK=, =LSC=, =HSC=, =HP= and =LP= filters with Q or
+bandwidth in octaves; eqR's own =.coreeq=; text in UTF-8, UTF-16 with a
+byte-order mark, and Windows-1252, since EqualizerAPO configs are edited in
+Notepad. Lines it does not model — =GraphicEQ:=, =Channel:=, =Convolution:= —
+are skipped and listed rather than failing the file, so filters meant for one
+channel apply to both. A file without a =Preamp:= line gets the computed trim,
+because a boost-heavy correction with no trim of its own clips at 0 dB. Every
+import shows what it found before anything is added: from the =+= under the
+list, =⌘V=, a file dropped on the list, or the AutoEQ guide beside the =+=. A
+file is named after itself; pasted text lands in rename.
+
+Export writes either format from a preset's context menu. Exporting the preset
+being listened to writes what is heard — unsaved edits and Quick EQ tone
+included — the way an edited document exports with its edits.
+
+Two things made the round trip lossy until the end. EqualizerAPO text has no
+ladder, so each band was written as a peaking filter and read back as a free
+one: a preset with six edited bands and twelve filters exported eighteen lines
+and lost two of them to the cap on the way back in. And numbers were written to
+one decimal, which turned a built-in's 1.75 dB into 1.8. A filter that is
+exactly a rung — a bell, enabled, on a ladder frequency, at the ladder's Q — now
+returns to its slot, which never changes the sound because a band *is* that
+bell, and every number is written with the decimals it needs, up to four.
+
+*Done*, on the roadmap's own terms. What eqR writes out reloads identically,
+tested with that eighteen-line preset. And a real AutoEQ profile, the
+Sennheiser HD 600 as measured by oratory1990, imports all ten filters and
+computes within 0.064 dB of the response AutoEQ publishes for it at 44.1 kHz,
+and within 0.108 dB at 48 kHz, across all 695 published frequencies — using
+the same filter definition the engine renders with.
+
+** Screen recordings captured the sound twice
+
+Reported twice as “screen recording fails in every capture tool”, with “a
+Doppler echo delay” in what was captured.
+
+Measured with a probe that recorded system audio through ScreenCaptureKit, the
+API screen recorders use, while eight clicks played:
+
+| eqR                 | Arrivals per click | Second copy         |
+|------------------------+--------------------+---------------------|
+| quit                   | 1                  | —                   |
+| on, a headphone preset | 2                  | +27.6 ms, ⅓ level   |
+| on, Flat               | 2                  | +27.2 ms, 80% level |
+| switched off           | 1                  | —                   |
+
+A recorder captures each application's sound before eqR's tap mutes it at
+the device, and it also captures eqR's own output: the same audio,
+equalized, 27 ms later. Two copies that close are heard as comb filtering. It
+had been filed next to a feedback loop, and it is not one — nothing compounds,
+and the recordings did not fail, they doubled. Any ScreenCaptureKit recorder
+sees it, and no fix in the audio path can remove it.
+
+What can be done is to step aside, and a recording can be seen from Core Audio
+alone. A process capturing input from no real device is reading a tap, which is
+system audio: during a ScreenCaptureKit capture, =replayd= shows as exactly
+that, from start to stop and at no other time. Audacity and QuickTime recording
+the microphone capture from the microphone and are left alone, and so is a
+video-only capture. Core Audio sends no notification when a process starts
+capturing, so this is polled — on a background queue, because a sweep costs
+14 ms and up to 40, and only while eqR is rendering.
+
+*Fixed, as far as it can be.* *Pause while recording system audio*, on by
+default in Settings → General: eqR steps aside the way idling does, without
+touching the on/off switch, says so on the graph and in the menu, and comes back
+when the recording stops. Measured end to end, the recording came out clean. The
+pause lands about a second after eqR starts rendering, so the start of a
+recording can still carry the doubled sound; the README says to switch off
+first when the start matters. Recorders that loop audio through a virtual
+device such as BlackHole read from a device like any microphone, and are not
+seen.
+
+** A tap that could hear eqR
+
+Found while chasing the echo after waking, which is still open on the roadmap.
+
+Every tap has to leave eqR's own process out, or it captures what eqR has
+just played. The lookup of that process could fail in two ways, and only one
+looked like failure: the call can return an error, or it can succeed and hand
+back object 0 for a process Core Audio does not know — measured, a PID with no
+audio client comes back as status 0, object 0. Excluding object 0 excludes
+nothing, and the tap was built anyway.
+
+*Fixed.* No tap is built without a real process to exclude. The start fails,
+the ordinary retries apply, and the sound is left alone in the meantime. The
+diagnostics report also counts eqR's own aggregate devices, since more than
+one alive is two paths rendering the same audio.
+
+** Starting during a recording read as a refused permission
+
+Found testing the pause above. eqR launched while QuickTime was recording
+showed “not allowed to process audio”, and cleared itself once music played.
+
+A refused permission cannot be asked about, only inferred: a tap that delivers
+nothing while something is playing. “Playing” meant a process holding the
+output open, and a recorder holds it open while sending nothing, so its silence
+read as a refusal. Separately, two seconds was too short even for real players:
+once, sound arrived 1.3 s after the verdict had already been given.
+
+*Fixed.* The verdict ignores processes that are also capturing input — leaving
+one out can only make it wait, never make it wrong — and waits six seconds
+rather than two. A refusal is a lasting state, so saying so later costs nothing.
+
+** A sample rate change left the sound chopped
+
+Reported in #27 against a Universal Audio Volt 476P: a DAW opening a session at
+another rate, or a player such as Qobuz that switches the device to each
+track's rate, left eqR's output glitchy and chopped until the app was
+restarted or the output switched away and back.
+
+Reproduced on a MacBook Pro's own speakers, with no DAW and no interface:
+switching them from 44.1 to 48 kHz under running music was enough. What made it
+worth writing down is what the engine reported while it happened. The aggregate
+followed the device and announced the new rate, the filters were retuned to it,
+and the rate trace saw no window in which the two disagreed. By every measure
+the engine had, it had followed the change. The sound was broken regardless,
+and set back to 44.1 kHz it was fine again. Part of the path is fixed when it is
+built, and retuning filters does not reach it; building the path again does,
+which is why both workarounds in the report worked.
+
+BlackHole does not reproduce it. Switched the same way, the old engine survived
+the change on a virtual device, so =make audio-test= cannot catch this defect;
+its new rate check guards the fix instead.
+
+The first fix rebuilt the path 0.3 s after the first rate notification, and the
+rate change it answered was followed by coreaudiod not answering for minutes —
+with no eqR left running, and no way to restart the service under System
+Integrity Protection, so the Mac had to be restarted. Two eqRs were running
+at the time, which is why the cause is not proven. A rate change is not one
+event: the device renegotiates, the aggregate follows, and both notify.
+Tearing devices down and creating them in the middle of that is the likeliest
+trigger, and the fix below does not do it.
+
+*Fixed.* eqR watches the output device's rate as well as its aggregate's.
+Any notification starts a one-second quiet period that the next one restarts;
+when it ends, the rate is read twice, a quarter of a second apart, and the path
+is rebuilt only if the two readings agree and differ from the rate it was built
+at. Measured by ear on the speakers: 48 to 44.1 kHz and back each gave one
+rebuild about a second after the change and clean playback, a round trip
+through 44.1 kHz in 0.3 s gave none and stayed clean, and coreaudiod answered
+throughout. The diagnostics report names the change, as in =sample rate changed
+from 48000 to 44100 Hz=.
+
+** Tabbing through a filter changed it
+
+Found on release day, on an imported AutoEQ preset. Moving through the
+parametric editor with Tab, without typing anything, marked the preset Edited
+and lit Revert — but only on some rows.
+
+A SwiftUI number field parses what it *shows* and writes that back whenever it
+loses focus, edited or not. Frequencies were shown without decimals, so a filter
+at 70.8 Hz read as "71", and leaving the field stored 71 Hz. The rows that
+stayed clean were the ones whose values happened to fit their fields — 105 Hz,
+−1.7 dB, Q 0.70. Every imported AutoEQ profile has frequencies with a decimal,
+so anyone who tabbed through one changed it.
+
+*Fixed.* A field writes back only when its text was actually changed, so moving
+through it is never an edit, whatever the precision of what it holds — that also
+covers a built-in's 1.75 dB shown as "+1.8". The frequency field now shows the
+decimal when there is one, so an imported 70.8 Hz reads as itself.
+
+** The menu's switch looked the same on and off
+
+Reported in #26: the switch in the status menu was grey whether eqR was on or
+off, told apart only by where the knob sat.
+
+=NSSwitch= fills its track with the accent colour only while its app is the
+active one, and a menu bar app is not active while its menu is open. The Wi-Fi
+menu does not have the problem because Control Center draws its own switches.
+Activating eqR when the menu opens would colour it and take the keyboard from
+whatever app the user is in, which is worse. None of the ways to recolour a real
+switch work: it has no tint property, public or private; it draws through its
+own layers, so an overridden =draw(_:)= is never called; and a Core Image filter
+on its layer barely reaches it.
+
+*Fixed.* The menu draws its own switch, copied from the system one rather than
+imitated: its size is read from =NSSwitch= at runtime, and the knob's shape,
+inset and colours were measured from it. On is the accent colour.
+
+** Documentation that answers the repeated questions
+
+Three recurring threads, each closed in writing rather than in replies:
+
+- Every built-in preset has a one-line description, written from its curve and
+  shown when the pointer rests on it in the sidebar or the menu.
+- The README shows how to verify the no-driver claim independently, by listing
+  =/Library/Audio/Plug-Ins/HAL= before and after installing — a commenter
+  proposed it, and it is better proof than any wording.
+- The README states the deliberate limits: no volume control, not bit-perfect,
+  and one curve for every channel.
+
+* 1.8 — Make it work everywhere it claims to
+
+Released <2026-09-20 Sun>.
+
+** Aggregate and Multi-Output Devices silence the Mac
+
+Found while trying to reproduce the multichannel reports below rather than from
+public feedback — which probably means it has been silencing people who had no
+way to work out what to blame.
+
+Core Audio will not nest one aggregate device inside another, and it does not
+say so. Handed an Aggregate or Multi-Output Device as a sub-device,
+=AudioHardwareCreateAggregateDevice= returns =noErr= and silently drops it,
+leaving an aggregate with no active sub-devices and no output streams at all.
+=AudioDeviceStart= then succeeds on that empty device, the engine reports
+=running=, and the IO proc is handed real tapped audio together with an output
+buffer list of zero buffers. =EQProcessor.render= iterates over nothing. Every
+stage succeeds and no audio is ever written.
+
+The tap, meanwhile, goes on muting every other process at the hardware. So the
+result is a completely silent Mac, an app reporting that it is processing audio,
+and no recovery from inside the app — global bypass skips the DSP without
+releasing the tap, so quitting eqR is the only fix. That is not a
+discoverable one for a menu bar app that can launch at login.
+
+Measured rather than inferred. The same call, wrapping two different devices:
+the built-in speakers give an aggregate with =1 buffer(s) [2ch]= and one active
+sub-device; an Aggregate Device gives =0 buffer(s) []= and zero active
+sub-devices. Both return =noErr=.
+
+This is plausibly a wider fault than the multichannel one it was found under.
+Aggregate and Multi-Output Devices are how people play to two sets of speakers
+at once, and how anyone recording through BlackHole or Loopback is set up, which
+is a larger population than 7.1 HDMI users.
+
+*Fixed.* eqR refuses an aggregate default output before the tap is created,
+so the machine is never muted for a configuration the app cannot serve, and it
+says which device and why. A second check confirms the aggregate it built
+reports output channels before an IO proc is started on it, because a call
+returning =noErr= is evidently not evidence that the device works. Refusing is
+not the same as supporting, which is below under "Later".
+
+** Multichannel outputs
+
+*Configurations reported:* HDMI to a display, an iConnectivity Audio4C over USB,
+and a DisplayPort monitor output raised pre-emptively by someone who had been
+burned before. Reports arrived through both Reddit and GitHub issues and may
+overlap, so treat the count of people as unknown; the count of distinct broken
+setups is what matters and it is at least three.
+
+Symptoms are silence or badly mangled audio, and they persist at Flat, which is
+the tell: the audio still crosses the tap when it is not being filtered, so the
+fault is in the plumbing rather than the DSP.
+
+One Audio4C report adds a detail worth having: “I can hear it over my speakers
+for a split second and then it's gone.” Audio starts and then stops, rather
+than never starting, which points at the moment the aggregate device is built
+and the IO proc takes over rather than at the tap's creation.
+
+eqR takes a stereo tap while the device presents more than two channels, so
+the layout does not line up. Forcing the device to 2 channels in Audio MIDI
+Setup restores sound, which confirms the diagnosis.
+
+Two things to do, and they are probably one change:
+
+- Handle devices with more than two channels honestly. Either match the tap to
+  the device's channel count, or place the stereo pair correctly in a wider
+  layout and pass the rest through untouched. The second is the smaller change
+  and is what the app already claims to do.
+- Stop assuming buffer position. =EQProcessor.render= pairs input buffer /i/
+  with output buffer /i/ across the =AudioBufferList=. That is better than
+  hardcoding buffer 0, but it is still positional, and a developer who shipped
+  the same kind of tool reported the aggregate handing them lists where the
+  tap's buffers were not the first entries. Select by matching channel count
+  and format instead.
+
+*Done when* the three reported configurations produce correct stereo, and a
+device reporting more than two channels either works or is reported in the UI
+rather than failing silently.
+
+*Done.* =EQProcessor= takes an explicit output layout, worked out once on the
+main thread from the device's streams and the taps' formats, and places each
+tap channel at a named output channel instead of pairing buffers by position. A
+tap is bound to every output stream the device presents, because a tap binds to
+one stream and takes that stream's format — binding to the widest alone captured
+two channels of sixteen on an interface presenting eight stereo streams. The
+chain runs on every routed channel with its own delay lines.
+
+Confirmed on hardware, against a sixteen channel device:
+
+- The device-bound tap delivers sixteen channels of 32-bit float, not a stereo
+  mixdown.
+- The aggregate built around it presents sixteen output channels, and the
+  device's own input buffers are accounted for — the tap is not buffer zero on a
+  duplex device.
+- Six channel content arrives as six discrete channels and is placed one to one,
+  with the remaining ten silent.
+- Flat is bit-exact. A +12 dB bell measures +12.0 dB.
+- Driving six channels with six different tones, each channel's measured
+  response matched the drawn curve to within 0.01 dB — which is only true if the
+  chain runs per channel with per-channel state.
+
+What remains untested on hardware is the per-stream path itself: every device
+available here presents a single output stream, so one-tap-per-stream is covered
+by unit tests against a fake tap factory rather than by a real interface.
+
+** Permission text before the system prompt, not after
+
+“System Audio Recording” sounds broader than what an equalizer does, and the
+one moment where that matters is the moment macOS asks. The explanation lived in
+Settings under the permission status, so it was only reachable after the dialog
+had already been answered.
+
+*Done*, and not the way this item imagined. The explanation belongs in
+=NSAudioCaptureUsageDescription=: macOS shows that string inside the permission
+dialog, which is precisely the moment in question. An in-app screen shown before
+the prompt was built first and then removed — it duplicated what the system
+already does, and required the app to predict whether a prompt was coming, which
+macOS gives no way to know.
+
+Two things were learned on the way, both worth keeping written down.
+
+The permission a process tap needs is *audio capture*, declared with
+=NSAudioCaptureUsageDescription= — Apple's own tap sample declares that key and
+nothing else. It is not screen recording, and
+=CGPreflightScreenCaptureAccess= reports a different permission entirely, even
+though the two appear under one heading in System Settings.
+
+And there is no API to ask whether audio capture is allowed. Microphone and
+camera have =AVCaptureDevice.authorizationStatus=; screen recording has a
+preflight; taps have neither, and creating one is what raises the prompt. So an
+app cannot check first — it can only try, and watch what happens.
+
+That last point turned out to matter more than the text did. See the item below.
+
+** Refusing permission silenced the Mac
+
+=AudioHardwareCreateProcessTap= returns *success* when the user has refused
+permission. The tap reports a plausible format, the aggregate runs, the IO proc
+fires — and every sample is zero, while =muteBehavior = .mutedWhenTapped=
+silences every other process at the hardware.
+
+Measured rather than inferred: with a refusal recorded and music playing, the
+engine reported =status: running=, a two channel device-bound tap, and
+=capturing: no audio seen since the engine started=. Apple's tap sample ignores
+the =OSStatus= from that call entirely, so it would behave the same way.
+
+The result was the worst state this engine has: a completely silent Mac, with
+every layer of the app reporting that it works, and nothing on screen.
+
+*Fixed.* Muting is now earned. A tap starts unmuted and the render path writes
+nothing until the engine has seen a non-zero sample; only then does it rebuild
+muted and begin processing. A refusal now costs only that the audio is not
+equalized, which is how an equalizer should fail, and the app says so and offers
+the System Settings pane rather than a retry that cannot help.
+
+The second half of the fix is knowing when *not* to say it. The first attempt
+gave up after ten seconds of silence, which meant launching on a quiet Mac —
+much the commonest way to launch — accused the user of refusing a permission
+they had granted. Silence is not evidence. The engine now waits indefinitely,
+which costs nothing while the tap is unmuted, and concludes only when audio is
+demonstrably playing elsewhere and none of it is arriving. It also keeps
+watching afterwards, so a verdict corrects itself the moment a sample appears.
+
+** The route-change window that was not there
+
+Raised by a commenter who had built a system-audio capture tool and hit it:
+a Bluetooth headset moving to its call profile drops the output rate, and
+coefficients are a function of =2pi*f/fs=, so every band lands in the wrong
+place until they are recomputed. eqR takes its rate from
+=kAudioDevicePropertyNominalSampleRate= rather than =kAudioTapPropertyFormat=,
+which avoids the version of the bug he described — but it still learns of the
+change from a property listener, and a listener fires after the fact. A window
+of audio filtered at the wrong rate looked unavoidable on paper.
+
+It does not happen, because *Core Audio stops the device across a rate change*.
+
+Measured on a Jabra Evolve 75, which offers exactly 44100 and 16000 Hz — the
+A2DP and HFP pair, a 2.76x shift that would have put a 1 kHz band at 363 Hz —
+and again on the built-in speakers, to check the result was not a property of
+Bluetooth:
+
+| device    | change            | reported -> staged | device silent | margin |
+|-----------+-------------------+--------------------+---------------+--------|
+| Jabra     | A2DP -> HFP       | 2.2 ms             | 174 ms        | 120 ms |
+| Jabra     | HFP -> A2DP       | 0.2 ms             | 385 ms        | 330 ms |
+| Built-in  | 96000 -> 44100 Hz | 4.1 ms             | 206 ms        | 206 ms |
+
+The new rate is staged within about two milliseconds of Core Audio reporting it,
+and audio does not resume for another 120 to 330. The first buffer at the new
+rate arrives at a render call that consumes the staged rate before it filters
+anything. Not one cycle ran on stale coefficients, in either direction, on a
+synthetic rate change or on a real profile switch driven by opening the
+microphone.
+
+*Not a defect.* Nothing was changed in the audio path, and the two mitigations
+that had been drafted were dropped as measurably pointless: the main-actor hop
+in the listener costs 0.2 ms against a margin of 120.
+
+What did ship is the instrument. =RateTrace= records the IO cadence — frame
+count and host time per cycle, four stores and no allocation on the audio
+path — and =RateWindow= reads it afterwards on the main thread, where frames
+divided by elapsed time gives the device's real rate, the one thing nothing
+reports in time. Any genuine window logs a line naming its width and where a
+1 kHz band actually sat.
+
+It ships rather than being deleted with the investigation because the result
+rests on a Core Audio behaviour rather than a documented promise, measured on
+two devices and one Mac. The diagnostics report now carries the answer — "rate
+window: none seen", or the width of the interval and where a 1 kHz band actually
+sat — so if this does not hold on someone else's hardware it arrives in their
+report rather than being argued from first principles. A line in a log would not
+have done: the people who hit this are running a downloaded app.
+
+Two bugs in the instrument itself were found by using it, which is the argument
+for having built it before trusting any conclusion: host times subtracted
+unsigned turned an event older than the trace into 768614336339369 ms, and
+=os_log= truncated the 500-row table away exactly where the interesting rows
+were. The summary now goes to the log and the table to a file, and only when
+there is a window to explain.
+
+** Preventing the Mac from sleeping
+
+Reported publicly: Activity Monitor shows eqR preventing sleep, with no audio
+playing at all.
+
+*Both explanations this item carried were wrong*, and measuring was the only way
+to find that out. The first said a continuously running IOProc holds the
+machine awake. The second, written after a partial measurement, said the
+assertion is held simply because the aggregate has been started. Neither
+survives the full sequence:
+
+| moment                                   | assertion | IO cycles |
+|------------------------------------------+-----------+-----------|
+| engine running, nothing has ever played   | none      | 0         |
+| audio playing                             | held      | ~87/s     |
+| 30 s after the audio stopped              | held      | ~87/s     |
+| a minute after the audio stopped          | held      | ~87/s     |
+
+Core Audio does not spin the IO context up until something plays — *and then
+never spins it back down*. So the defect is not that eqR holds the device
+from launch. It is that **once anything has played, the device is never let go**,
+which in practice is every session after the first sound.
+
+The assertion itself belongs to =coreaudiod=, raised for eqR's aggregate and
+attributed back to eqR's pid. That is why Activity Monitor blames an app
+whose own source contains no assertion, and why looking for one found nothing.
+
+*Fixed.* eqR now releases the audio device after thirty seconds of digital
+silence and rebuilds it the moment something plays. Two measurements made that
+affordable: =AudioDeviceStop= alone releases the assertion, and a complete cold
+rebuild — tap, aggregate, IO proc — costs 27 ms. Observed resume in the running
+app was 42 ms.
+
+Only the IO proc is stopped. The tap and the aggregate stay alive, so resuming
+touches no topology at all — one =AudioDeviceStart= against a device that was
+never taken apart.
+
+It was built the other way first, tearing the whole path down and rebuilding it
+on resume, on the theory that a live =mutedWhenTapped= tap would silence every
+other process with nothing running to write their audio back. That theory was
+never tested, and it was wrong: measured, audio reaches the device at full level
+with the IO proc stopped and the tap alive. Worse, the rebuild it justified
+*broke playback*. Creating a new aggregate around the output device at the
+moment a player opens that device reconfigures the device — and renegotiates the
+link, on Bluetooth — underneath the client that just grabbed it. Players failed
+to start and only worked after several attempts, each one racing the rebuild.
+Found in manual testing on Bluetooth, where it is worst.
+
+The lesson is not about aggregates. An unexamined assumption about a failure
+mode produced a design that caused a different, real failure, and the check that
+would have settled it took one probe.
+
+*How the engine notices playback was the second thing testing corrected.* The
+first version polled every half second, and that left roughly a second of
+unequalized audio at the start of playback — clearly audible, and the whole
+point of an equalizer is that the first second is not wrong. The fix was not a
+faster poll: sweeping every audio process costs about 6 ms a pass, and
+=kAudioProcessPropertyIsRunningOutput= turns out to send no notifications at
+all, which is why an earlier listener-based attempt did nothing.
+
+=kAudioDevicePropertyDeviceIsRunningSomewhere= on the output device does notify,
+costs 0.05 ms to read, and is false while eqR is idle. Beside it, a listener
+on the audio process list catches a player about 80 ms before it plays — useful,
+because the device needs about 90 ms to deliver its first buffer after being
+started, so reacting to *audible* audio is already too late.
+
+On a Bluetooth headset that took resume from 1.97 / 1.10 / 0.29 seconds down to
+a consistent 40-48 ms, measured from the player launching rather than from the
+first sample — which means the engine is running before there is anything to
+equalize.
+
+Two rules keep it from misbehaving, and both came out of testing rather than
+design. Silence and playback must *both* agree before the device is released:
+they are measured differently — one by the render path, one by the system — and
+a process is free to hold the device open while sending zeros, which would
+otherwise idle and resume in turn, rebuilding the audio path every thirty
+seconds for as long as that process ran. And a path that failed to build is left
+to the retry that already owns recovery: without that, an output device the
+engine refuses would be retried twice a second forever. The second was found on
+hardware, after the code looked right.
+
+A third came out of manual testing and is the one worth remembering, because it
+would have shipped the whole feature dead. The guard against acting mid-rebuild
+read =pendingRestart == nil=, and =pendingRestart= was cancelled everywhere but
+never *cleared* — so after the first restart the engine believed one was
+permanently in flight and never idled again. The default output device listener
+fires once at launch, so that first restart happens in every session: the
+feature would have worked in testing on a quiet machine and for nobody in the
+field. A work item used as a flag has to be nil'd wherever it can end, which is
+three places, not one.
+
+It was diagnosed from a pasted diagnostics report in a single step — =idling:
+no, 0 release(s) this session= beside a minute of uptime — which is the whole
+argument for the report carrying this in the first place.
+
+Idling is invisible from the outside — the EQ is on, and the next sound is
+equalized — so =Status= is deliberately untouched and the menu bar icon does not
+blink off every time a room goes quiet. What is visible is the diagnostics
+report, which now says whether the device is currently released, how many times
+it has been, and how long that has totalled. It has to: a released device and a
+broken engine look identical until someone plays something.
+
+There is also a switch, in Settings, to turn the whole behaviour off. Every
+silent-Mac defect in this app's history had no workaround from inside the app —
+quitting was the only fix, which is not discoverable for something that launches
+at login. One line of settings turns the next one into an inconvenience.
+
+** Tab skipped newly added parametric bands
+
+Reported while testing something else: adding a band, clicking into its first
+field and pressing Tab jumped to the top of the table instead of moving along
+the row.
+
+=NSWindow.autorecalculatesKeyViewLoop= defaults to false for a window built in
+code rather than loaded from a nib, so AppKit computed the Tab order once, when
+the window was made, and never again. Every band added afterwards had fields
+that were not in it.
+
+*Fixed*, in one line where the window is built. The details are in
+[[file:DEVELOPMENT.org][DEVELOPMENT.org]] under the traps, because the symptom — Tab skips the last row —
+points at the list, and the list is not where the fault is.

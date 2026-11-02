@@ -1,0 +1,24 @@
+import Combine
+import Foundation
+
+/// The Settings window's panes.
+enum SettingsTab: Hashable {
+    case general
+    case exclusions
+    case diagnostics
+    case about
+}
+
+/// Which pane the Settings window should show.
+///
+/// A scene cannot be handed an argument, so the destination is put here before
+/// the window is asked to open. It is not persisted: the gear means General and
+/// the app mark means About, every time, rather than "wherever you were last".
+@MainActor
+final class SettingsRoute: ObservableObject {
+    static let shared = SettingsRoute()
+
+    @Published var tab: SettingsTab = .general
+
+    private init() {}
+}

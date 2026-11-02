@@ -1,0 +1,54 @@
+import AppKit
+
+/// Header row: a bold "eqR" title on the left and a switch on the right,
+/// matching the Wi‑Fi menu's title-plus-toggle header. No icon. The switch is
+/// `MenuSwitch`, not `NSSwitch`, so that on looks different from off.
+@MainActor
+final class MenuHeaderView: NSView {
+    private let toggle: MenuSwitch
+    private let onToggle: (Bool) -> Void
+
+    init(isOn: Bool, isEnabled: Bool = true, onToggle: @escaping (Bool) -> Void) {
+        self.onToggle = onToggle
+        self.toggle = MenuSwitch(isOn: isOn)
+        super.init(frame: .zero)
+        // View-based menu items are sized by Auto Layout, so drive the whole
+        // view from constraints (fixed content width, fixed row height).
+        translatesAutoresizingMaskIntoConstraints = false
+
+        let title = NSTextField(
+            labelWithString: String(
+                localized: "eqR", comment: "Menu bar extra heading: the app name"))
+        title.font = NSFont.menuFont(ofSize: 0).bold()
+        title.translatesAutoresizingMaskIntoConstraints = false
+
+        // Off while the engine cannot run at all: switching on would then set a
+        // preference and change no sound.
+        toggle.isEnabled = isEnabled
+        toggle.target = self
+        toggle.action = #selector(switchToggled)
+        toggle.translatesAutoresizingMaskIntoConstraints = false
+        toggle.setAccessibilityLabel(
+            String(localized: "Equalizer", comment: "Menu bar extra switch, for VoiceOver"))
+
+        addSubview(title)
+        addSubview(toggle)
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: QuickEQMenuMetrics.contentWidth),
+            heightAnchor.constraint(equalToConstant: 34),
+            title.leadingAnchor.constraint(
+                equalTo: leadingAnchor, constant: QuickEQMenuMetrics.horizontalInset),
+            title.centerYAnchor.constraint(equalTo: centerYAnchor),
+            toggle.trailingAnchor.constraint(
+                equalTo: trailingAnchor, constant: -QuickEQMenuMetrics.horizontalInset),
+            toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    @objc private func switchToggled() {
+        onToggle(toggle.isOn)
+    }
+}

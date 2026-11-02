@@ -1,0 +1,764 @@
+#+TITLE: eqR — Developer Guide
+
+Everything needed to build, run, and test eqR, and a tour of the project
+structure. Cutting a release and what CI runs are in
+[[file:RELEASING.org][RELEASING.org]]; how the app is put together is in [[file:INTERNALS.org][INTERNALS.org]], and why
+the equalizer is shaped the way it is, in [[file:ARCHITECTURE.org][ARCHITECTURE.org]]. The user guide is
+[[file:USER_GUIDE.org][USER_GUIDE.org]].
+
+* Toolchain
+
+- Xcode *26 or later* to build and test. App exclusion sets
+  =CATapDescription.bundleIDs= and =isProcessRestoreEnabled=, which exist only
+  in the macOS 26 SDK; the calls are guarded at runtime, so the app still runs
+  on macOS 14.2. The project also uses the folder-synchronized format
+  (=objectVersion 70=), which needs Xcode 16.
+- Xcode *27* to cut a release. CI and =release.yml= both run it, and the release
+  job rejects a binary linked against anything older than the 27 SDK — see “The
+  runner image is a user-visible choice” in [[file:RELEASING.org][RELEASING.org]]. Nothing
+  in the sources needs it; the SDK generation is what ships.
+- macOS *14.2 or later* to run (the process-tap API does not exist earlier).
+- No external dependencies — system frameworks only (SwiftUI, AppKit,
+  CoreAudio, AudioToolbox, Combine, os).
+
+If your active developer directory points at the Command Line Tools instead of
+Xcode (=xcode-select -p= prints =/Library/Developer/CommandLineTools=), either
+switch it once:
+
+#+begin_src sh
+sudo xcode-select -s /Applications/Xcode.app
+#+end_src
+
+or prefix every =xcodebuild= call with
+=DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer=.
+
+* Building
+
+Open =eqR.xcodeproj= in Xcode and build (⌘B), or from the command line:
+
+#+begin_src sh
+xcodebuild -project eqR.xcodeproj -target eqR -configuration Debug build
+#+end_src
+
+=make build= does the same for the Release configuration (every Makefile target
+is listed below).
+
+The app lands in =build/Debug/eqR.app=. The build is ad-hoc signed
+(=CODE_SIGN_IDENTITY=-=) with the hardened runtime disabled. Releases are
+re-signed with eqR's certificate; with that certificate in your keychain,
+=make install SIGN_IDENTITY="eqR Release"= does the same locally (see
+“Signing” in [[file:RELEASING.org][RELEASING.org]]).
+
+** Makefile targets
+
+The =Makefile= wraps the common flows (it also auto-selects the full Xcode
+toolchain if =xcode-select= points at the Command Line Tools):
+
+| =make build=      | Release build into =build/Release/eqR.app=           |
+| =make test=       | Run the =eqRTests= unit suite                        |
+| =make format=     | Apply the house style to every Swift file               |
+| =make lint=       | Report style violations without changing anything       |
+| =make strings=    | Build, then merge new interface text into the catalog   |
+| =make sign=       | Build, then re-sign with =SIGN_IDENTITY= when it is set |
+| =make install=    | Sign and install to =/Applications=                     |
+| =make release=    | Sign and zip to =dist/eqR-<version>.zip= (=ditto=)   |
+| =make screenshot= | Build, sign, and capture the window for the README      |
+| =make spatial-compare FILE=…= | Render a clip three ways (original, eqR 3D, Apple spatial) to =build/spatial-compare-out/= |
+| =make clean=      | Remove =build/= and =dist/=                             |
+
+=make build= takes extra xcodebuild settings through =XCODE_FLAGS=, e.g.
+=make build XCODE_FLAGS=ARCHS=arm64=. It is empty by default, so =make release=
+is universal unless overridden.
+
+
+* Running
+
+#+begin_src sh
+open build/Debug/eqR.app
+#+end_src
+
+- eqR is a menu bar app (=LSUIElement=): no Dock icon, look for the sliders
+  icon in the menu bar.
+- First launch opens the main window on eqR's own explanation; *Allow…*
+  then raises the macOS *System Audio Recording* dialog (=TCCAccessRequest=).
+  The explanation shown in that dialog is the usage string in
+  =Config/Info.plist= (=NSAudioCaptureUsageDescription=). No tap is created
+  until the answer is yes. See “Asking for the permission” in [[file:INTERNALS.org][INTERNALS.org]].
+- Refusing does *not* fail loudly. =AudioHardwareCreateProcessTap= returns
+  success even when the permission was refused: the tap reports a plausible
+  format, the aggregate runs, the IO proc fires, and every sample is zero. See
+  “Proving the tap” in [[file:INTERNALS.org][INTERNALS.org]] for what the engine does about it.
+- TCC ties the permission to the code signature, and an ad-hoc signature pins
+  the exact build. After a rebuild with a code change eqR opens on the
+  *Allow…* card again; a build signed with =SIGN_IDENTITY= keeps it. Switching the permission in System Settings takes effect
+  only after a relaunch. To start from a clean slate:
+  =tccutil reset AudioCapture com.eqr.eqr= (no =sudo= needed, and
+  only eqR's entry is touched).
+
+eqR asks TCC for the permission through private entry points
+(=TCCAccessPreflight=, =TCCAccessRequest=), compiled in under the
+=EQR_TCC_SPI= condition, on by default. To build without them — to try the
+fallback a macOS without them would get, or for a distributor that scans for
+private API — turn it off:
+
+#+begin_src sh
+make build XCODE_FLAGS=EQR_TCC_SPI=NO
+#+end_src
+
+The app then creates the tap at launch (which raises the macOS prompt), cannot
+tell “not asked” from “refused”, and concludes a refusal from silence while
+audio plays, as 1.9 did. CI builds this way too, and fails if the private names
+appear in that binary.
+
+Engine activity is logged through =os.Logger= (subsystem
+=com.eqr.eqr=). Follow it live with:
+
+#+begin_src sh
+log stream --predicate 'subsystem == "com.eqr.eqr"' --level info
+#+end_src
+
+** The README screenshot
+
+=make screenshot= takes it without anyone touching the app, so screenshots of
+one version and the next differ in what changed and nothing else. It builds
+the app, signs it, and runs =Tools/screenshot.sh=, which:
+
+1. checks the terminal's two permissions, before touching anything;
+2. generates a test signal: pink noise with a chord of two notes over it, high-
+   passed at 40 Hz and rolled off from 12 kHz — the slope and the peaks of
+   music, from a fixed seed, so the same samples every run;
+3. quits any running eqR and opens =build/Release/eqR.app=, a second
+   time if needed: once it has the permission it starts with no window, and
+   opening it again shows one, as opening it again from Finder does;
+4. moves the window to the Retina screen and sets it to the size it opens at on
+   a large screen (=MainWindowGeometry.preferred=, read from the source; 1120
+   × 760);
+5. plays the signal for four seconds and captures the window, shadow included,
+   to =design/screenshots/eqr-<version>.png=, the version read from the
+   app. Running it again replaces that version's file.
+
+The spectrum behind the curve is drawn from what eqR outputs, so with a
+signal this even it takes the active preset's shape: the screenshot shows
+whichever preset is selected, and its boosts and cuts as humps and dips. Pick
+the preset in the app first. The signal is audible for those seconds, at the
+system volume.
+
+- *Signing.* The build is signed with the =eqR Release= certificate when the
+  keychain has it (or with =SIGN_IDENTITY=, when given), so the audio
+  permission granted once covers every later build. An ad-hoc build is a new
+  app to macOS each time. If eqR opens on the *Allow…* card, the script says
+  so and waits for it to be answered, rather than capturing the card.
+- *Retina.* A window is captured at the resolution of the screen it is on; on
+  a 1x external display it comes out at half the detail and in that display's
+  colour profile. The script warns if the result is not 2x.
+- *Settings.* =WIDTH=, =HEIGHT=, =SETTLE= (the seconds of signal before the
+  capture) and =CARD_TIMEOUT= override the defaults. Any other copy of the app
+  can be passed: =Tools/screenshot.sh /Applications/eqR.app=.
+- *Permissions.* The terminal needs Accessibility, to size the window, and
+  Screen Recording, to capture it. macOS does not ask for either; the script
+  opens the System Settings page for the one that is missing.
+
+* Testing
+
+** AutoEq data and cache
+
+The catalog uses upstream =results/INDEX.md= and =ParametricEQ.txt= files from
+[[https://github.com/jaakkopasanen/AutoEq][AutoEq]]. eqR resolves =master= through GitHub's commits API, then fetches
+the index and individual profiles from =raw.githubusercontent.com= at that
+40-character commit SHA. The native catalog has no dependency on autoeq.app;
+the by-hand guide opens that website for its own correction workflow; the
+catalog can also compute compatible targets locally.
+
+Constructing the service or launching eqR performs no AutoEq requests.
+Opening the browser starts loading. Its progress bar reports received bytes
+and a percentage when the server supplies a content length; revision checks,
+unknown-length transfers, and parsing show indeterminate progress.
+
+=Caches/<bundle id>/AutoEQ/catalog-v1.json= is one atomically written snapshot:
+schema version, Git revision, last successful check time, and the index.
+Snapshots are trusted for seven days. A forced refresh checks immediately;
+an unchanged SHA renews the timestamp without downloading the index again.
+A failed refresh returns the old snapshot marked stale. Cancellation propagates
+instead of returning stale data. Old =entries.json=/=targets.json= backend
+caches and unsupported snapshot versions are ignored.
+
+Profiles download on selection and are validated as readable corrections through
+=ParametricEQParser= before being cached: an error page is rejected, and a file
+carrying no gain-bearing filter is too. Range is not a download-time rejection;
+any value eqR must change is disclosed when the profile is loaded. Their paths
+are =profiles/<revision>/<SHA256 of result path>.txt= under the same cache
+directory. A new revision never reads an old profile. Missing profiles need
+network access even when browsing works offline.
+Cache-write failures do not prevent a successful preview. macOS may evict this
+cache; there is no bundled fallback. Old revision caches are retained until
+the cache is cleared or evicted. Imported user presets live separately.
+
+Crinacle source directories are excluded case-insensitively during parsing
+and rejected again before any profile request. This is a source restriction,
+not a ban on headphone names containing Crinacle. Relative paths preserve
+upstream spelling and are encoded component by component; traversal paths
+are rejected. The app downloads published corrections rather than redistributing
+raw measurements. The repository's MIT license does not override restrictions
+on third-party measurement data. Any future data source needs its own review.
+AutoEq attribution appears in the browser; its notice is included in
+=eqR/Resources/AutoEq-LICENSE.txt=.
+
+URLProtocol-backed tests cover revision changes, refresh failure, cancellation,
+cache schema validation, source exclusion, on-demand offline profile reuse,
+download progress, selection races, and audition/import conversion. No test
+contacts a live endpoint.
+
+=make test= runs =eqRTests=, a host-less logic bundle covering the filter
+maths, the built-in profiles, =ProfileManager=, =SettingsStore=, the analyzer and
+its ring buffer, the scroll handling, and the layout arithmetic that has no
+runtime check. See “Unit tests” below for how the target is
+assembled.
+
+Nothing in that suite touches audio hardware, so the parts that only exist at
+runtime still need a manual pass after changes:
+
+1. Build and launch; confirm the menu bar icon appears and the window's header
+   shows no engine warning.
+2. Play music; switch between *Flat* and *Bass Boost* — the change must be
+   audible, immediate, and free of clicks.
+3. Toggle the master switch — instant, glitch-free.
+4. Drag a band slider — the sound tracks the slider smoothly and the curve
+   follows it.
+5. Switch the system output device (speakers → headphones) — processing resumes
+   on the new device within ~1 s, *and that device's own preset loads*.
+6. Quit and relaunch — preset, edits, and enabled state come back, per device.
+7. Quit — system audio returns to the normal unprocessed path.
+
+
+** Unit tests
+
+
+=eqRTests= is a host-less logic bundle: it never launches the app or touches
+audio hardware, so it runs anywhere, including CI. Roughly one file per subject:
+
+- =BiquadTests=, =EQProcessorTests=, =AutoGainTests= — the maths, and what the
+  render path does with it.
+- =FilterChainTests=, =PresetLibraryTests=, =EQProfileTests= — the model as value
+  types, without a manager.
+- =ProfileManagerTests= — the live state: editing, presets, tone.
+- =DeviceStateTests= — what is remembered: per device, across a relaunch, and
+  between A and B.
+- =SettingsStoreTests=, =ThemeTests=, =ScrollAdjusterTests=, =KnobScaleTests=,
+  =SpectrumAnalyzerTests=, and the small format and colour files.
+
+
+** =make audio-test=: what the unit tests cannot reach
+
+
+=make test= checks what the app *decides*. =make audio-test= checks what it *does to
+the sound*, by playing a known signal through the built application and
+measuring what actually arrives at the device.
+
+It exists because of where this project's defects have actually been. Every
+serious one was at a boundary the unit tests cannot cross — Core Audio
+reporting success for an aggregate that plays nothing, a tap created without
+permission that captures silence, a channel map pointing somewhere else, a
+rebuild that broke playback on Bluetooth. What they have in common is that every
+layer of the app went on reporting that it worked. The only thing that catches
+that is listening to the output.
+
+It plays a stereo tone with a *different frequency in each channel*, so a map
+that swaps or smears them fails rather than merely sounding odd, and captures
+through BlackHole — silent, exact, and independent of speakers. What it asserts:
+
+- audio reaches the device at all (the three silent-Mac defects)
+- each tone comes back on the channel it was played into, with crosstalk far
+  down (the multichannel defect)
+- channels the tap never fed stay silent (the same defect, from the other side)
+- the level is not roughly doubled, which is what a tap that stopped muting
+  would produce
+- the device is released after silence, and the sound is *identical* either side
+  of an idle cycle — compared against itself, so it is exact without knowing
+  anything about the user's preset
+
+Requires BlackHole (=brew install blackhole-16ch=) and about a minute, most of
+it waiting for the idle timer.
+
+*It also needs permission to record audio*, because it measures the sound by
+reading it back from BlackHole's input. That permission belongs to whatever is
+running the command, not to eqR, so it is granted per terminal — the same
+=make audio-test= passes in one terminal and fails in another until each is
+allowed under Privacy & Security. macOS does not report the refusal: a denied
+process is handed an input stream that delivers silence. The test checks the
+permission up front and says so, rather than measuring -200 dB and drawing
+conclusions from it. It changes the default output device and the
+sample rate, and restores both on the way out including after a failure.
+
+*The first check is a gate, not a check.* If the harness cannot hear its own
+tone with eqR out of the way, the run stops there. Everything after it
+compares one measurement against another, and two silences agree perfectly — so
+carrying on produced a page of passes that only meant the nothing was
+consistent. That was found by running it where the microphone permission was
+missing, and it was the more useful half of the bug.
+
+Checks whose precondition does not hold are reported as =SKIP= rather than
+passed. A virtual capture device does not always make coreaudiod raise a sleep
+assertion, so that one check is verified where it can be and named where it
+cannot — a check that quietly did not run is worse than one that failed.
+
+*It owns eqR's lifetime while it runs.* Every copy of the app is stopped
+first — more than one can be running, an installed copy and a build, and each
+has its own tap muting the same device — and the copy the test launches is
+stopped again at the end. Whatever was running beforehand is started again from
+the same bundle it came from, so an installed copy is not quietly replaced by a
+development build.
+
+*A run that could not start says so.* Missing BlackHole, missing permission, a
+silent baseline, or another app already playing exit as =AUDIO TEST DID NOT
+RUN=, never as passed: nothing failed only because nothing ran, and that is not
+the same as working. The last one is named — =Something else is playing audio:
+QuickTime Player= — because eqR holds the device for as long as anything
+plays, and a player left running, inaudible once the output has moved to
+BlackHole, made the idle checks fail for a reason that was not eqR's. If the
+device is still not released after a run has started, the failure names what
+was playing at that moment.
+
+*It is not CI.* It needs real hardware and real Core Audio; that is the point.
+Run it before a release, alongside the manual checks that only ears can make —
+whether the resume seam is audible, and whether Tab reaches every field.
+
+*A warning about the runner.* =make test= builds incrementally, and a file
+rewritten quickly enough can be missed — the suite then runs and passes without
+the tests you just added. The count is the check: if the total does not move,
+the run is lying to you. =touch= the file and run again.
+
+Because the project uses =PBXFileSystemSynchronizedRootGroup=, the test target
+takes the whole =eqR/= folder *minus* an exclusion list. A new source file
+joins the test target automatically — if it imports SwiftUI, AppKit, or
+CoreAudio, add it to =membershipExceptions= in =project.pbxproj= or the test
+build will fail. Those entries are paths relative to =eqR/=, so they carry
+the folder too (=UI/MenuBar/MenuBarController.swift=); moving a file between
+folders means updating its entry.
+
+
+* Build settings that matter
+
+Beyond the Xcode template's defaults, these are set deliberately.
+
+- *=SWIFT_VERSION = 6.0=* — the Swift 6 language mode, which makes data-race
+  safety a compile-time property rather than a hope. It matters more here than in
+  most apps: everything is =@MainActor= except =EQProcessor.render=, which Core
+  Audio calls on a realtime thread, and the compiler now checks that boundary
+  rather than trusting the comments around it.
+
+  The migration cost two =deinit= fixes. =SpectrumAnalyzer= and =AudioDeviceList=
+  both cleaned up main-actor state from a nonisolated =deinit= — a `Timer` bound
+  to a run loop, a vDSP allocation, and Core Audio listener blocks — which can
+  run on any thread. Both are =isolated deinit= now, which is the honest
+  statement: that cleanup belongs to the main actor.
+
+- *=SWIFT_TREAT_WARNINGS_AS_ERRORS = YES=* — the codebase had no warnings, so
+  this cost nothing to adopt and everything to skip. It immediately caught two
+  =var= bindings in tests that were never mutated.
+
+- *=SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY = YES=* — =any Decoder= rather than
+  bare =Decoder=. Required by a future language mode anyway; six call sites.
+
+- *Five more upcoming-feature flags*, same reasoning as =EXISTENTIAL_ANY=: opt
+  into the next language mode's rules now, while the diff is small, rather than
+  all at once under time pressure. There is no Swift 7 language mode to select —
+  =swiftc= accepts only =4=, =4.2=, =5= and =6=, so =SWIFT_VERSION = 6.0= is
+  already the ceiling and these features are reachable only one flag at a time.
+
+  - =SWIFT_UPCOMING_FEATURE_INFER_ISOLATED_CONFORMANCES=
+  - =SWIFT_UPCOMING_FEATURE_INTERNAL_IMPORTS_BY_DEFAULT=
+  - =SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY=
+  - =SWIFT_UPCOMING_FEATURE_NONISOLATED_NONSENDING_BY_DEFAULT=
+  - =ImmutableWeakCaptures=, via =OTHER_SWIFT_FLAGS=, because Xcode 27 exposes no
+    named build setting for this one.
+
+  Four were free. =MEMBER_IMPORT_VISIBILITY= found a real bug: =SettingsRoute=
+  declared =ObservableObject= and =@Published= while importing only =Foundation=,
+  so it was reaching Combine transitively through another module's import — it
+  compiled by luck, and would have broken if that module ever dropped Combine.
+  The fix is the explicit =import Combine= now at the top of the file.
+
+  =NONISOLATED_NONSENDING_BY_DEFAULT= changes which executor a =nonisolated
+  async= function runs on: today such a function always hops to the global
+  concurrent executor, and under this flag it inherits the caller's isolation
+  instead. That is usually a careful migration, because a function written to get
+  work *off* the main actor silently starts running *on* it, and the fix is to
+  mark those =@concurrent=.
+
+  Here it changes nothing, because there is nothing for it to apply to: the app,
+  the tests and =Tools/= contain *no =async= declarations and no =await= at all*.
+  The only =async= tokens in the tree are =DispatchQueue.main.async= — GCD, not
+  Swift concurrency — and all six =Task= sites are =Task { @MainActor in … }=.
+  The =nonisolated= that does appear is unrelated: =nonisolated(unsafe)= on
+  stored properties, and three *synchronous* =nonisolated static= functions in
+  =AudioEngine=. Core Audio calls =ioBlock= synchronously on the realtime thread,
+  which this feature does not touch. The compiler agrees — built under
+  =-enable-upcoming-feature NonisolatedNonsendingByDefault:migrate=, it emits
+  zero fix-its.
+
+  It is on for the same reason as the rest, then: a tripwire, so the first
+  =nonisolated async func= anyone adds gets the future semantics from the start.
+
+  Deliberately *not* enabled:
+
+  - =SWIFT_STRICT_MEMORY_SAFETY= — 438 warnings, concentrated exactly where the
+    risk is: =AudioEngine= (61), =AudioDevices= (51), =BufferRouter= (26),
+    =EQProcessor= (24). With warnings-as-errors that is all-or-nothing, so it is
+    an annotation project, not a flag. Useful as a one-off audit of the render
+    path.
+
+  One feature is out of reach entirely: =Span= and =InlineArray= — the safe
+  buffer types this code would most benefit from — need a macOS 26 deployment
+  target (=SwiftSpanMinimumDeploymentTarget= in the SDK), against 14.2 here.
+  That is the standing cost of the support floor.
+
+- *=VALIDATE_PRODUCT = YES=* (Release only).
+
+- *=DEPLOYMENT_POSTPROCESSING = YES=, =STRIP_INSTALLED_PRODUCT = YES=,
+  =STRIP_STYLE = all=* (Release, app target only) — strip the shipped
+  executable. Until 1.8 nothing ever ran =strip=: =STRIP_INSTALLED_PRODUCT=
+  alone is inert, because the Strip Linked Product phase is gated on
+  =DEPLOYMENT_POSTPROCESSING=, which =xcodebuild build= leaves off — only the
+  =archive= and =install= actions turn it on, and =make release= does neither.
+
+  The symbol table had quietly become most of the binary: 3.74 MB of 5.85 MB at
+  1.8, 24,031 Swift mangled names, growing faster than the code it names. Across
+  1.4 → 1.8 the code went 0.56 → 2.11 MB while the symbols went 0.60 → 3.74 MB.
+  Stripping takes the app from 7.7 MB to 4.1 MB on disk; the zip only falls from
+  3.2 MB to 2.7 MB, because symbol strings compress well. Nothing is lost:
+  =DEBUG_INFORMATION_FORMAT = dwarf-with-dsym= still writes
+  =build/Release/eqR.app.dSYM= with UUIDs matching the stripped binary, so
+  crash reports symbolicate against it, and the =__swift5_*= reflection sections
+  live in =__TEXT= where =strip= does not reach.
+
+  These are set on the app target rather than the project so the test bundle
+  keeps its symbols.
+
+- *=CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO=* (Release, app target only) —
+  releases through 1.8 shipped with =com.apple.security.get-task-allow=, the
+  entitlement that lets any debugger attach to the running app. Xcode injects it
+  by default under an ad-hoc signature. eqR has no entitlements file of its
+  own, so Release now ships with an empty entitlement set; verify with
+  =codesign -d --entitlements - build/Release/eqR.app=.
+
+*Both architectures stay.* The product is a universal binary (=ARCHS= left at
+its default), which doubles everything above — roughly 650 KB of =__text= per
+slice. Dropping =x86_64= is the next easy megabyte and is deliberately not
+taken: Intel Macs are still in use, and =MACOSX_DEPLOYMENT_TARGET= 14.2 includes
+them.
+
+*One thing measured and rejected.* =SWIFT_STRICT_MEMORY_SAFETY= produces 244
+findings, almost all in the audio path, where =UnsafePointer= work is the job
+rather than a mistake: the IO proc is handed raw buffers by Core Audio and must
+not allocate. Adopting it would mean annotating that code =@unsafe= to say what
+is already true, and the ratio of noise to insight is wrong. =MemberImportVisibility=
+is the same story at 38 findings, for less benefit.
+
+*A compiler bug worth remembering.* Passing an actor-isolated closure
+(=@MainActor (Double) -> Void=) as a parameter into a generic helper crashes
+=swift-frontend= while emitting the reabstraction thunk — only in a whole-module
+Release build, so a Debug build looks fine. =FilterRowView= therefore names
+*which* parameter a cell edits with an enum and writes its closures inline, where
+they inherit the view's own isolation and no thunk is produced. If a similar
+crash appears elsewhere, that is the shape to look for.
+
+* Formatting
+
+*swift-format*, Apple's own, which ships inside the Xcode toolchain: =xcrun
+swift-format=, no Homebrew, no package dependency, nothing for CI to install.
+It is also the formatter behind Xcode's own Editor ▸ Structure ▸ Format
+commands, so the editor and the command line agree by construction.
+
+It is not the same tool as *SwiftFormat* (Nick Lockwood's), which is
+third-party and configured completely differently. Installing "swiftformat" from
+Homebrew gets the other one.
+
+=.swift-format= at the repository root holds the configuration; Xcode discovers
+it automatically by walking up from the file being edited. It is not the tool's
+defaults: four-space indentation and a hundred-column limit are the codebase's
+existing conventions, measured before being written down — the defaults are two
+spaces, which would have rewritten every line in the project for no reason.
+
+=make lint= runs with =--strict=, so any finding is a non-zero exit and CI fails
+on it.
+
+*One file opts out.* =BuiltInProfiles.swift= carries =// swift-format-ignore-file=
+because its preset table is aligned by hand — eleven gains in columns, so one
+preset can be compared with another by eye. The formatter collapses that
+alignment into ordinary argument lists, and the table stops being a table. That
+is a deliberate, documented exception rather than a disagreement with the tool.
+
+*On SwiftLint.* Not used, deliberately. It is a third-party binary that every
+contributor and every CI runner would have to install, in a project whose one
+boast is that it has no dependencies at all. swift-format's lint mode already
+covers the naming and style rules =AlwaysUseLowerCamelCase=,
+=TypeNamesShouldBeCapitalized=, =NeverUseForceTry=, =DontRepeatTypeInStaticProperties=,
+=ValidateDocumentationComments= and the rest. What SwiftLint would add on top is
+mostly complexity metrics and force-unwrap policing; the project has no force
+unwraps outside tests, and a metric nobody has needed yet is not worth a
+dependency.
+
+*On =.editorconfig=.* Not used. Xcode does not read it — it has never supported
+the format — so in an Xcode-only project it would be a second, silent copy of
+the indentation and line-length settings that =.swift-format= already holds, free
+to drift out of step with it. It earns its place the day someone edits this
+project in VS Code or Vim, and not before.
+
+* Interface text
+
+Every string a person sees lives in the String Catalog,
+=eqR/Resources/Localizable.xcstrings=, and is written to the rules in
+[[file:STRINGS.org][STRINGS.org]], which follow Apple's own style. SwiftUI literals reach the
+catalog by themselves; anything else is =String(localized:comment:)=. After
+changing a string, run =make strings= and commit the catalog with the code:
+=xcodebuild= extracts strings but, unlike Xcode, never writes them back.
+
+Plural strings pass =bundle: .eqR=. The tests build the same catalog into
+their own bundle, which is why the test target has a Resources phase and
+excludes every other resource.
+
+* Design tokens
+
+Every font in the app comes from =Theme.Font=, and every colour from
+=.primary= / =.secondary= / =.tertiary= or from =Theme=. A view that writes
+=.font(.system(size: 12))= is a bug in the same way an unformatted file is:
+nothing will fail, and the app will drift.
+
+It did drift. Before the tokens existed there were eight hardcoded point sizes —
+9, 10, 11, 12, 13, 14, 17 — *and* three of the system's semantic styles
+(=.callout=, =.caption=, =.headline=) used alongside them. Which one a view used
+depended on when it was written, so the Settings panes had ended up a different
+size from the window and from each other, and text people had to read was being
+set at 9 and 10 points.
+
+Ten roles, and adding an eleventh should feel like it needs an argument:
+
+| =title=            | 17 semibold        | the app's name in About, and nothing else |
+| =heading=          | 13 semibold        | the heading of a pane or a block          |
+| =body=             | 13                 | row text naming something: a device, a preset |
+| =label=            | 12                 | labels and controls — the app's default   |
+| =labelEmphasized=  | 12 semibold        | a label titling the group beneath it      |
+| =secondary=        | 11                 | supporting text, axis legends             |
+| =value=            | 11 medium, mono    | a number that changes as it is dragged    |
+| =valueEmphasized=  | 11 semibold, mono  | the same, where the number is the subject |
+| =report=           | 11 monospaced      | the diagnostics report                    |
+| =tick=             | 10 mono digits     | axis ticks, and nothing else              |
+
+Two rules behind the table. *Eleven points is the floor for anything anyone
+reads* — =tick= is below it because axis numerals are glanced at, never read, and
+it is the only role allowed there. And *monospaced digits are for numbers that
+change*: a value that updates during a drag makes the row twitch between glyph
+widths otherwise.
+
+Fixed point sizes rather than the semantic styles, which means eqR does not
+follow Dynamic Type. That trade was already made — the window, the menu and the
+Settings panes are laid out to fixed sizes and would break — so the tokens make
+it consistent rather than accidental. Revisiting it is a layout project, not a
+typography one.
+
+One exception, and it should stay the only one: =PowerToggleStyle= sizes its
+glyph from the toggle's own diameter. That is icon geometry, not typography.
+
+Colour is in better shape and only half tidied. Text uses the three system
+hierarchies; the response curve and the block borders come from =Theme.signal=
+and =Theme.blockBorder=. What has *not* been collapsed is opacity: there are
+around a dozen distinct values in use for fills, borders and dimming, several of
+which are probably meant to be the same number. Prefer an existing one over
+inventing another, and the whole set is worth naming the way the fonts now are.
+
+* Project structure
+
+#+begin_example
+eqR.xcodeproj          Xcode project (folder-synchronized sources)
+Config/Info.plist         LSUIElement, NSAudioCaptureUsageDescription, versions
+design/
+  logo.svg                Colored app icon source (not shipped)
+  menubar.svg             Monochrome menu bar template source (not shipped)
+eqR/
+  App/
+    eqRApp.swift         SwiftUI entry point (@main) + the Settings scene
+    AppDelegate.swift       App lifecycle, main-window construction, wiring
+    AppActivation.swift     Bringing an accessory app's windows to the front
+    OutputDeviceFollower.swift Keeping the EQ on the device the system is using
+    SettingsStore.swift     UserDefaults wrapper
+    AppRelaunch.swift       Quit and reopen, for a permission switched on in Settings
+    SingleInstance.swift    Never two copies at once: they silence each other
+    LoginItem.swift         Open-at-login, via SMAppService
+    SystemSettingsLink.swift The Privacy pane that can undo a refusal
+    EngineStatusBridge.swift Engine status, for the Settings scene
+    ProfileStatusBridge.swift What the manager holds, for the Settings scene
+  Audio/
+    AudioEngine.swift       Tap + aggregate device + IO proc, device-change handling
+    AudioDevices.swift      Output device enumeration + default-device get/set
+    AudioDeviceList.swift   Observable device list for the main window
+    Capture/
+      OutputPlan.swift      Which device channel each tap channel is written to
+      TapAssembly.swift     How many taps a device needs, and over which streams
+      CaptureProof.swift    Whether a tap is capturing, silent, or refused
+      RecoveryPolicy.swift  Persistent retry backoff and callback-progress health decisions
+      TapAccess.swift       What eqR believes about the audio-capture permission
+      AudioCapturePermission.swift  TCC preflight/request (private SPI)
+      DiagnosticsReport.swift The report a user copies out of Settings
+    Spectrum/
+      SpectrumAnalyzer.swift  Windowed FFT driving the response backdrop
+      SpectrumAudioBuffer.swift Lock-light ring buffer feeding the analyzer
+  EQ/
+    EQProcessor.swift       The render path: staging, and what happens per block
+    BufferRouter.swift      Tap channels into device channels; buffer arithmetic
+    FilterBank.swift        The chain itself: biquads, smoothing, delay lines
+    OutputProtection.swift  Zero-lookahead linked peak containment and release
+    RenderObservations.swift What the render thread noticed, for reports
+    Biquad.swift            One RBJ biquad: coefficients + magnitude response
+    AutoGain.swift          The trim that holds a preset at its original loudness
+  Presets/
+    EQFilter.swift          One filter: kind, frequency, gain, Q, ladder slot
+    EQProfile.swift         A named chain, its preamp, and its gain mode
+    FilterChain.swift       Chain arithmetic: the shape it holds, what tone does
+    BuiltInProfiles.swift   Shipped presets + the band ladder they share
+    PresetLibrary.swift     The collection: naming, search, add / rename / delete
+    DeviceEQState.swift     What one output device was last playing, A and B
+    QuickTone.swift         Bass / mid / treble weighting over the ladder
+    ProfileManager.swift    Orchestration: what is live, and keeping it in step
+  UI/
+    Theme.swift             Design tokens (accent, spacing, metrics); the
+                            TokyoNight palette applied across surfaces and the window appearance it forces
+    BandFormat.swift        Frequency and gain label formatting
+    BandColor.swift         Palette a parametric band is tagged with
+    KnobScale.swift         Value ladders shared by the knobs and fields
+    PowerToggleStyle.swift  Bypasses, drawn as power buttons
+    ScrollAdjuster.swift    Scroll-wheel / trackpad adjustment for any control
+    MainWindow/
+      MainWindowGeometry.swift   What size the window opens at, on any display
+      EqualizerSidebarView.swift Preset search + list, preset actions
+      EqualizerDetailView.swift  Content column: header (device + its preset),
+                                 graph, editors, preamp
+      FrequencyResponseView.swift Response curve, handles, interaction
+      ResponseAxis.swift         Where a frequency sits — shared, and tested
+      SpectrumBackdrop.swift     The analyzer's output, behind the curve
+      FilterListView.swift       Parametric editor: the table and its titles
+      FilterRowView.swift        One band: swatch, kind, three knobs
+      ColorPalettePicker.swift   The eight colours a band can wear
+      ColumnGap.swift            The gap the titles and the rows share
+      VerticalGainSlider.swift   Band gain slider
+      GlobalGainView.swift       Preamp column beside the editors
+      GainScale.swift            The dB scale both of those are read against
+      KnobControl.swift          Frequency / gain / Q knob
+      ValueField.swift           Editable numeric field beside a knob
+      WindowBackground.swift     Window material behind the content column
+      AppMark.swift              Vector app mark for the sidebar
+      DownwardPointer.swift      Tail shape under the gain readout
+    Settings/
+      SettingsView.swift        The window: General and About tabs
+      GeneralSettingsView.swift Open at login, and room for more
+      AboutSettingsView.swift   Mark, version, links, licence
+      SettingsOpener.swift      Opens that window, at a chosen tab
+      SettingsRoute.swift       Which tab that is
+    MenuBar/
+      MenuBarController.swift NSStatusItem menu (presets, output, bypass, settings, quit)
+      MenuHeaderView.swift    Title + on/off switch at the top of the menu
+      QuickEQBodyView.swift   Mini response graph + tone sliders
+      QuickEQMenuMetrics.swift Sizes shared by the menu's custom views
+      MenuRowView.swift       One menu row: icon, title, chevron, highlight
+      MenuListView.swift      Scrolling list a chooser row unfolds into
+      MenuListMetrics.swift   Sizes shared by row and list
+      FlippedStackView.swift  Top-down document view for the list
+      MenuPresentation.swift  Deferring a window past the menu's tracking loop
+  Extensions/
+    Double+Clamped.swift    Range clamping
+    Array+SafeIndex.swift   Bounds-checked element access
+    Color+eqR.swift      Accent shorthand
+    NSFont+Bold.swift       Bold variant for the AppKit menu labels
+    Bundle+eqR.swift     The bundle the String Catalog is built into
+  Resources/
+    AppIcon.icns            Generated app icon (make icons)
+    AppIcon.icon/           Icon Composer document (macOS 26+ app icon)
+    MenuBarIconTemplate.png (+@2x) Generated menu bar template (make icons)
+    MenuBarIconSlashTemplate.png (+@2x) The same mark, struck through, for off
+    Localizable.xcstrings   Every interface string (make strings)
+    InfoPlist.xcstrings     The permission reason macOS shows, and the copyright
+#+end_example
+
+*What =Audio/Capture/= is for.* Everything under it is pure: it decides or
+describes, and never calls Core Audio. Everything directly in =Audio/= is the
+opposite — it is the boundary, and cannot be tested without hardware. That line
+is not a preference, it is the reason those types exist: each was lifted out of
+=AudioEngine= so a decision that used to be provable only by plugging something
+in could be checked in a test instead. Keeping them apart in the tree keeps the
+rule visible, and says where new code goes. If a type has to ask Core Audio
+something, it belongs at the top level; if it only has to decide, it belongs
+below, and it gets tests.
+
+*Tests mirror this tree.* =eqRTests/= follows the same folders, so the gap
+between a directory's sources and its tests is legible at a glance —
+=eqRTests/Audio/= holding nothing but =Capture/= and =Spectrum/= is the
+accurate statement that the Core Audio boundary has no unit tests and cannot
+have them. The exception is =eqRTests/Support/=, which holds helpers rather
+than suites.
+
+*How the render path is divided.* =EQProcessor= owns the thread boundary — the
+staged parameters, the lock, and the order of work in a block — and delegates
+the rest. =BufferRouter= knows where audio comes from and goes to; =FilterBank=
+knows what happens to it in between; =RenderObservations= knows what was
+noticed on the way past. They are structs, stored inline, because everything
+here runs on the audio thread where a class would add a retain and an
+indirection per block.
+
+The staging deliberately did *not* move. It is what the type's
+=@unchecked Sendable= claim is about, and splitting it would mean either
+allocating a changes struct inside the IO callback or threading =inout=
+plumbing through it — spreading an invariant that is currently verifiable in
+one place, for no gain.
+
+*Where model logic lives.* =ProfileManager= is the only observable object in
+the model layer, and it is deliberately not where the thinking happens. The
+preset collection is =PresetLibrary=, chain arithmetic is =FilterChain=, and what
+a stored device slot *means* is =DeviceEQState.resolved(against:)=. All three are
+value types with no actor, no defaults and no dependencies, so they can be built
+and compared in a test directly — which is why =PresetLibraryTests= and
+=FilterChainTests= need no fixture at all.
+
+=PresetLibrary= is a struct rather than a second =ObservableObject= on purpose:
+SwiftUI does not follow nested observation, so an observable inside the manager
+would publish nothing to the views watching it. Held as a stored property, every
+mutation republishes for free.
+
+One top-level type per file, named after it — nested types stay with the
+type that owns them (=AudioEngine.Status=, =MenuRowView.Accessory=), and
+extensions on foreign types live in =Extensions/= as =Type+Feature.swift=.
+
+The =eqR/= folder is a synchronized group: dropping a new =.swift= file
+anywhere inside it adds it to the target automatically (and any other file
+type becomes a bundle resource), no project-file edits needed. The
+subfolders are plain groups, not folder references, so resources are copied
+flat into =Contents/Resources/= regardless of which folder they live in.
+
+Note that stale =membershipExceptions= paths are not merely ignored: Xcode
+still resolves them as file references, and a moved file whose old path is
+left behind fails the build with “Multiple commands produce …”.
+
+** Icons
+
+The shipped icon files are generated from the SVG sources in =design/= by
+=make icons= (requires ImageMagick: =brew install imagemagick=). After
+editing an SVG, rerun the target and rebuild:
+
+- =design/logo.svg= → =eqR/Resources/AppIcon.icns= — rasterized at the ten
+  standard sizes (16–1024 px) and packed with =iconutil=; referenced from
+  =Config/Info.plist= via =CFBundleIconFile=. This is the *fallback* icon
+  for macOS 14/15.
+- =eqR/Resources/AppIcon.icon= — an Icon Composer document (background fill +
+  =Assets/bars.svg= layer) compiled by =actool= into =Assets.car= during
+  the build (=ASSETCATALOG_COMPILER_APPICON_NAME=, =CFBundleIconName=).
+  This is the *primary* icon on macOS 26+: without it the system shows the
+  =.icns= scaled down on a dark backing plate (the legacy-icon treatment),
+  and with it the system also derives the dark/tinted icon-style variants
+  automatically. The bar geometry is duplicated from =design/logo.svg=;
+  keep them in sync when the design changes. Icon caches are aggressive —
+  after replacing the app, =lsregister -f /Applications/eqR.app= plus
+  =killall iconservicesagent Dock Finder= forces a refresh.
+- =design/menubar.svg= → =eqR/Resources/MenuBarIconTemplate.png= (18 pt) and
+  =@2x= (36 pt) — a black-on-transparent copy of the logo's EQ bars.
+  macOS renders it as a /template image/: only the alpha channel is used,
+  recolored automatically for Light/Dark mode. Keep this SVG a solid
+  single-color silhouette; =MenuBarController= falls back to an SF Symbol
+  if the resource is missing.

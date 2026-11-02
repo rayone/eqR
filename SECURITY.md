@@ -1,0 +1,105 @@
+# Security Policy
+
+## Supported versions
+
+eqR is supported on its current major line only. Fixes are made on `master`
+and shipped in the next release of that line; there are no backports to earlier
+point releases.
+
+| Version | Supported          |
+| ------- | ------------------ |
+| 1.x     | :white_check_mark: |
+| < 1.0   | :x:                |
+
+Within 1.x, please reproduce the issue on the **latest released version**
+before reporting it — see the [Releases](https://github.com/eqr/eqr/releases)
+page, or upgrade with `brew update && brew upgrade --cask eqr`.
+
+eqR requires macOS 14.2 or later. Vulnerabilities that exist only on
+unsupported versions of macOS are out of scope.
+
+## Reporting a vulnerability
+
+Please **do not** open a public issue for a security problem.
+
+Report it privately through GitHub:
+[Security → Report a vulnerability](https://github.com/eqr/eqr/security/advisories/new).
+
+Include, as far as you can:
+
+- the eqR version (menu bar → *Settings…* → *About*) and macOS version,
+- whether the build came from Homebrew, a release zip, or a local `make build`,
+- the output device and, if relevant, the active preset,
+- steps to reproduce, and what an attacker gains,
+- any crash log or sample from Console.app.
+
+You will get an acknowledgement within a few days. If the report is confirmed,
+you will be told when a fix lands and in which release, and credited in the
+advisory unless you ask otherwise.
+
+## Scope
+
+eqR is a local, single-user menu bar application. It opens no listening
+ports, has no update mechanism of its own, and no inter-process interface
+beyond the standard macOS ones. It stores presets and per-device settings in
+`UserDefaults` under the user's own account.
+
+Its one outbound connection is the AutoEq catalog, and only while the user has
+it open: HTTPS requests to `api.github.com` for the AutoEq repository's latest
+commit, and to `raw.githubusercontent.com` for files at that commit. Nothing
+about the user or their audio is sent: the requests name only the file they
+want, with a `eqR/<version>` User-Agent. Downloads are
+cached under `~/Library/Caches/<bundle id>/AutoEQ`.
+
+In scope:
+
+- Anything that lets code or a user without access to the account read, alter,
+  or capture the audio eqR taps, or the settings it stores.
+- Privilege escalation, or any path by which eqR writes outside the user's
+  own container.
+- Crashes in the audio render path that are reachable from untrusted input
+  (audio data, preset values, device properties).
+- Anything a downloaded AutoEq file — the index, a correction, a target or a
+  measurement — can do beyond being refused or disclosed as a correction:
+  writing outside the cache directory, a request to a host other than the two
+  above, or a crash.
+- Misuse of the *System Audio Recording* permission — eqR requests it to
+  process what you hear, and captured audio must never be written to disk or
+  leave the machine. eqR reads its own status for that permission through
+  TCC's private `TCCAccessPreflight` and asks for it with `TCCAccessRequest`,
+  for the audio-capture service only, and never changes any other app's
+  permission. Builds made with `EQR_TCC_SPI=NO` contain neither.
+
+Releases from 1.10 on are signed with eqR's own self-signed certificate,
+“eqR Release”, SHA-1 fingerprint
+`DE1D551EEE962BC3E08C8AFA51F126E0E83CA016`. macOS grants the audio permission to
+whatever carries that signature, so a build signed with it that is not from this
+repository's releases — or any sign that the certificate's private key has
+leaked — is in scope. Check a copy with:
+
+```sh
+codesign -dvvv --verbose=4 /Applications/eqR.app 2>&1 | grep -E 'Authority|Identifier'
+codesign -d -r - /Applications/eqR.app
+```
+
+The first should name `eqR Release`; the second should end in
+`certificate root = H"de1d551eee962bc3e08c8afa51f126e0e83ca016"`.
+
+Out of scope:
+
+- The fact that release builds are **self-signed and unnotarized**, and the
+  `xattr -dr com.apple.quarantine` step documented in the README. This is a
+  known property of the current distribution, not a vulnerability report;
+  building from source avoids it.
+- Anything requiring an attacker who already has code execution as the user, or
+  root, or physical access to an unlocked machine.
+- Audio quality problems, glitches, clicks, or engine restarts that do not
+  cross a security boundary — those are ordinary
+  [issues](https://github.com/eqr/eqr/issues).
+- Vulnerabilities in macOS or Core Audio themselves. Report those to Apple.
+
+## Disclosure
+
+Please give a reasonable window — 90 days is the default — between the report
+and any public write-up, and coordinate the timing on the advisory thread so a
+fixed release is available first.

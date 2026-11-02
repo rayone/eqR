@@ -1,0 +1,252 @@
+import Foundation
+
+/// Thin `UserDefaults` wrapper for the persisted app state: active profile,
+/// EQ enabled flag, user-created presets, and the working chain — the active
+/// preset plus whatever the user has changed since selecting it.
+///
+/// Main-actor isolated. `UserDefaults` is thread-safe on its own, but this type
+/// caches on top of it, and every owner — the profile manager, the engine, the
+/// app delegate — is already on the main actor. Stating that here keeps the
+/// cache correct by construction rather than by convention.
+@MainActor
+final class SettingsStore {
+    private enum Key {
+        static let activeProfileName = "activeProfileName"
+        static let isEnabled = "isEQEnabled"
+        static let customGains = "customBandGains"
+        static let workingFilters = "workingFilters"
+        static let workingPreamp = "workingPreamp"
+        static let tone = "quickToneControls"
+        static let userProfiles = "userProfiles"
+        static let deviceStates = "deviceStates"
+        static let lastOutputDeviceUID = "lastOutputDeviceUID"
+        static let pausesWhenSilent = "pausesWhenSilent"
+        static let pausesWhileRecording = "pausesWhileRecording"
+        static let excludedBundleIDs = "excludedBundleIDs"
+        static let exclusionList = "exclusionListBundleIDs"
+        static let hasMigratedParametricBuiltIns = "hasMigratedParametricBuiltIns"
+        static let hasMigratedSpacePreset = "hasMigratedSpacePreset"
+    }
+
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    /// Persistent UID of the output the app was last filing state under.
+    ///
+    /// Core Audio does not always have an answer at launch — a device still
+    /// waking, or none connected at all — and without this the app files that
+    /// session under the no-device slot, where the state is invisible to every
+    /// real device afterwards.
+    var lastOutputDeviceUID: String? {
+        get { defaults.string(forKey: Key.lastOutputDeviceUID) }
+        set { defaults.set(newValue, forKey: Key.lastOutputDeviceUID) }
+    }
+
+    var activeProfileName: String? {
+        get { defaults.string(forKey: Key.activeProfileName) }
+        set { defaults.set(newValue, forKey: Key.activeProfileName) }
+    }
+
+    var isEnabled: Bool {
+        get { defaults.object(forKey: Key.isEnabled) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.isEnabled) }
+    }
+
+    /// Whether eqR releases the audio device while nothing is playing.
+    ///
+    /// On by default, because holding it is what keeps a Mac awake all night.
+    /// Off exists because this app has three times shipped a change that
+    /// silenced someone's machine, and every one of those had no workaround
+    /// from inside the app — quitting was the only fix, which is not
+    /// discoverable for something that launches at login. A switch costs one
+    /// line of settings and turns the next such bug into an inconvenience.
+    var pausesWhenSilent: Bool {
+        get { defaults.object(forKey: Key.pausesWhenSilent) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.pausesWhenSilent) }
+    }
+
+    /// Whether eqR steps aside while a recording captures system audio.
+    ///
+    /// On by default, because the two failures are not alike. With it off, a
+    /// screen recording comes out doubled — ruined, and nobody who hears it
+    /// knows why. With it on, the sound in the room is unequalized for as long
+    /// as the recording runs, and comes back by itself. Off exists for sharing a
+    /// screen with audio in a call, where someone may prefer their EQ to what
+    /// the other side hears. See `RecordingDetection`.
+    var pausesWhileRecording: Bool {
+        get { defaults.object(forKey: Key.pausesWhileRecording) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.pausesWhileRecording) }
+    }
+
+    /// Apps eqR leaves alone, by bundle identifier, in the order they were
+    /// added. Empty unless the user has excluded something. Read by the engine
+    /// each time it builds the tap; see `AppExclusion`.
+    ///
+    /// Not per device: it says which apps should never be equalized, and that
+    /// does not change with the headphones.
+    var excludedBundleIDs: [String] {
+        get { defaults.stringArray(forKey: Key.excludedBundleIDs) ?? [] }
+        set {
+            if newValue.isEmpty {
+                defaults.removeObject(forKey: Key.excludedBundleIDs)
+            } else {
+                defaults.set(newValue, forKey: Key.excludedBundleIDs)
+            }
+        }
+    }
+
+    /// Every app on the Exclusions list, switched on or off, in the order they
+    /// were added. `excludedBundleIDs` is the part switched on; this is the
+    /// rest of what the pane shows, so an app can be given its EQ back for a
+    /// while without being forgotten.
+    ///
+    /// Always includes every excluded app, even one missing from the stored
+    /// list, so nothing the engine leaves out can be invisible in the pane —
+    /// the one place it could be switched back.
+    var exclusionListBundleIDs: [String] {
+        get {
+            let listed = defaults.stringArray(forKey: Key.exclusionList) ?? []
+            return listed + excludedBundleIDs.filter { !listed.contains($0) }
+        }
+        set {
+            if newValue.isEmpty {
+                defaults.removeObject(forKey: Key.exclusionList)
+            } else {
+                defaults.set(newValue, forKey: Key.exclusionList)
+            }
+        }
+    }
+
+    /// Band gains dialed in on top of the active profile by eqR 1.x.
+    ///
+    /// Read once at launch, migrated into `workingFilters`, then set to nil so
+    /// the two can't disagree. Nothing in the app writes a value here — that is
+    /// a fact about the callers, not something this setter enforces.
+    var legacyCustomGains: [Double]? {
+        get { defaults.array(forKey: Key.customGains) as? [Double] }
+        set {
+            if let newValue {
+                defaults.set(newValue, forKey: Key.customGains)
+            } else {
+                defaults.removeObject(forKey: Key.customGains)
+            }
+        }
+    }
+
+    /// The chain the user is actually hearing — the active preset plus any
+    /// edits since — or nil when it still matches the preset.
+    ///
+    /// Stored whole rather than as a gain array, because free filters carry a
+    /// kind, frequency, and Q that a bare list of gains cannot express.
+    var workingFilters: [EQFilter]? {
+        get {
+            guard let data = defaults.data(forKey: Key.workingFilters) else { return nil }
+            return try? JSONDecoder().decode([EQFilter].self, from: data)
+        }
+        set {
+            if let newValue, let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Key.workingFilters)
+            } else {
+                defaults.removeObject(forKey: Key.workingFilters)
+            }
+        }
+    }
+
+    /// Output trim the user has dialed in on top of the active preset, or nil
+    /// when it still matches.
+    var workingPreamp: Double? {
+        get { defaults.object(forKey: Key.workingPreamp) as? Double }
+        set {
+            if let newValue {
+                defaults.set(newValue, forKey: Key.workingPreamp)
+            } else {
+                defaults.removeObject(forKey: Key.workingPreamp)
+            }
+        }
+    }
+
+    /// Menu-bar Quick EQ tone positions as `[bass, mid, treble]`, or nil when
+    /// all three are centred.
+    var tone: [Double]? {
+        get { defaults.array(forKey: Key.tone) as? [Double] }
+        set {
+            if let newValue {
+                defaults.set(newValue, forKey: Key.tone)
+            } else {
+                defaults.removeObject(forKey: Key.tone)
+            }
+        }
+    }
+
+    /// What was playing on each output device, keyed by its persistent UID.
+    ///
+    /// Replaces the single active-preset / working-chain / trim / tone keys,
+    /// which are now read once at launch to seed the current device's slot and
+    /// never written again.
+    ///
+    /// Held in memory and written through, because this is the one setting on an
+    /// interaction path: every step of a slider drag files the working chain
+    /// under the current device, and each of those went through a full decode of
+    /// every device's state purely to put one key back. Reading is now free and
+    /// only the encode remains.
+    var deviceStates: [String: DeviceEQState] {
+        get {
+            if let cachedDeviceStates { return cachedDeviceStates }
+            let stored =
+                defaults.data(forKey: Key.deviceStates)
+                .flatMap { try? JSONDecoder().decode([String: DeviceEQState].self, from: $0) }
+                ?? [:]
+            cachedDeviceStates = stored
+            return stored
+        }
+        set {
+            if newValue.isEmpty {
+                defaults.removeObject(forKey: Key.deviceStates)
+                cachedDeviceStates = newValue
+                return
+            }
+            // Cached only once it is on disk: a state that fails to encode must
+            // not live on in memory as if it had been saved, and vanish at the
+            // next launch.
+            guard let data = try? JSONEncoder().encode(newValue) else { return }
+            defaults.set(data, forKey: Key.deviceStates)
+            cachedDeviceStates = newValue
+        }
+    }
+
+    /// Mirror of `deviceStates`, populated on first read. Valid because a store
+    /// is the only writer of its own defaults key.
+    private var cachedDeviceStates: [String: DeviceEQState]?
+    /// Whether the one-time migration from the legacy 22 built-ins to the new
+    /// parametric presets has been performed.
+    var hasMigratedParametricBuiltIns: Bool {
+        get { defaults.bool(forKey: Key.hasMigratedParametricBuiltIns) }
+        set { defaults.set(newValue, forKey: Key.hasMigratedParametricBuiltIns) }
+    }
+
+    /// Whether the Space preset name has been migrated without losing user presets.
+    var hasMigratedSpacePreset: Bool {
+        get { defaults.bool(forKey: Key.hasMigratedSpacePreset) }
+        set { defaults.set(newValue, forKey: Key.hasMigratedSpacePreset) }
+    }
+
+    /// Presets the user created in the main window, stored as JSON. Empty when
+    /// the user hasn't made any. Decoding failures fall back to an empty list
+    /// rather than throwing, so a corrupt entry can never block launch.
+    var userProfiles: [EQProfile] {
+        get {
+            guard let data = defaults.data(forKey: Key.userProfiles) else { return [] }
+            return (try? JSONDecoder().decode([EQProfile].self, from: data)) ?? []
+        }
+        set {
+            if newValue.isEmpty {
+                defaults.removeObject(forKey: Key.userProfiles)
+            } else if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Key.userProfiles)
+            }
+        }
+    }
+}

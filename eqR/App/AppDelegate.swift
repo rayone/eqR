@@ -1,0 +1,330 @@
+import AppKit
+import Combine
+import SwiftUI
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let settings = SettingsStore()
+
+    /// Owned here rather than by the window, so device changes are followed
+    /// whether or not anything is on screen — the EQ has to follow the hardware
+    /// even when eqR is only a menu bar icon.
+    private let outputs = AudioDeviceList()
+
+    private lazy var profileManager = ProfileManager(
+        settings: settings,
+        outputDeviceUID: outputs.defaultDevicePersistentID
+    )
+    private lazy var audioEngine = AudioEngine(settings: settings)
+    private var menuBarController: MenuBarController?
+    private var mainWindow: NSWindow?
+
+    /// The AutoEQ catalog, owned by the app rather than by the sidebar that used
+    /// to present it: the download is one-time and the selection has to survive
+    /// the browser window closing and reopening. The window below reads it.
+    private let autoEQStore = AutoEQStore()
+
+    /// Held because the toolbar's tracking separator needs the split view, and
+    /// the toolbar is asked for its items while the window is still being built.
+    private var splitViewController: NSSplitViewController?
+    private var cancellables = Set<AnyCancellable>()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before anything else exists: a second copy must not get as far as a
+        // menu bar icon, let alone a tap. See `SingleInstance`.
+        SingleInstance.ensure { [weak self] in self?.finishLaunching() }
+    }
+
+    private func finishLaunching() {
+        // The window resolves against this from its first frame; letting it
+        // draw light and switch dark afterwards is a visible flash.
+        Theme.applyAppearance()
+
+        // The palette is not observable, so the appearance follows the setting
+        // from here on: the publisher fires with the current value at launch
+        // and again on every change, which is what carries switches made in
+        // Settings while the app runs. The value side (what the views read) is
+        // `Theme.isTokyoNight`; this side drives the resolution everything
+        // unpainted — text, controls, the sidebar material — draws against.
+        UserDefaults.standard
+            .publisher(for: \.appThemeMode)
+            .sink { _ in
+                MainActor.assumeIsolated { Theme.applyAppearance() }
+            }
+            .store(in: &cancellables)
+
+        menuBarController = MenuBarController(
+            profileManager: profileManager,
+            audioEngine: audioEngine,
+            outputs: outputs,
+            openMainWindow: { [weak self] in self?.showMainWindow() }
+        )
+
+        let audioEngine = self.audioEngine
+        profileManager.$currentFilters
+            .sink { audioEngine.apply(filters: $0) }
+            .store(in: &cancellables)
+
+        profileManager.$currentPreamp
+            .sink { audioEngine.apply(preamp: $0) }
+            .store(in: &cancellables)
+
+        profileManager.$currentSpatialWidth
+            .sink { audioEngine.apply(spatialWidth: $0) }
+            .store(in: &cancellables)
+
+        // Each output device keeps its own preset, edits, trim, and tone — the
+        // way macOS keeps a volume per device. Switching outputs loads that
+        // device's sound.
+        let profileManager = self.profileManager
+        OutputDeviceFollower.follow(
+            outputs.$defaultDeviceUID,
+            note: { ProfileStatusBridge.shared.noteDeviceList(uid: $0) },
+            adopt: { profileManager.setOutputDevice(uid: $0) }
+        )
+        .store(in: &cancellables)
+
+        // The Settings window is a separate scene and cannot be handed the
+        // engine, so the one fact it needs crosses on its own.
+        EngineStatusBridge.shared.follow(audioEngine)
+        ProfileStatusBridge.shared.follow(profileManager)
+        AutoEQStatusBridge.shared.follow(autoEQStore)
+
+        audioEngine.start()
+
+        // A menu bar app that is waiting for a permission it has not asked for
+        // looks like an app doing nothing. The window is where the explanation
+        // and the button are. Not after a refusal: someone who said no does not
+        // want a window forced on them at every login, and the menu bar row
+        // covers that case.
+        if audioEngine.tapAccess == .notDetermined {
+            showMainWindow()
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        audioEngine.stop()
+    }
+
+    /// Re-launching eqR while it is already running (from Finder, Spotlight,
+    /// or `open -a`) brings up the main window rather than doing nothing, which
+    /// is the only visible response a menu bar app can give to being "opened".
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        showMainWindow()
+        return true
+    }
+
+    /// Builds the main window around a real `NSSplitViewController`.
+    ///
+    /// SwiftUI's `NavigationSplitView` only gets Finder's full-height sidebar —
+    /// material running to the top of the window with the traffic lights sitting
+    /// over it — when SwiftUI owns the window too. Hosted in a hand-made
+    /// `NSWindow` it lays the titlebar across both columns instead. An
+    /// `NSSplitViewItem(sidebarWithViewController:)` gives that layout directly:
+    /// it supplies the vibrant material, sets `allowsFullHeightLayout`, and
+    /// keeps its content clear of the window controls via the safe area.
+    private func showMainWindow() {
+        if mainWindow == nil {
+            let splitViewController = NSSplitViewController()
+            self.splitViewController = splitViewController
+
+            let sidebar = NSSplitViewItem(
+                sidebarWithViewController: NSHostingController(
+                    rootView: EqualizerSidebarView(
+                        profileManager: profileManager,
+                        audioEngine: audioEngine,
+                        autoEQStore: autoEQStore,
+                        openAutoEQBrowser: { AutoEQBrowserRoute.shared.requestBrowser() }
+                    )
+                )
+            )
+            // The setting that actually runs the sidebar material to the top of
+            // the window, with the traffic lights sitting over it.
+            sidebar.allowsFullHeightLayout = true
+            sidebar.minimumThickness = 216
+            sidebar.maximumThickness = 300
+            // Not collapsible, and no toggle in the toolbar: with the button
+            // gone, a sidebar dragged shut would have no way back.
+            sidebar.canCollapse = false
+            splitViewController.addSplitViewItem(sidebar)
+
+            let contentController = NSHostingController(
+                rootView: EqualizerDetailView(
+                    profileManager: profileManager,
+                    audioEngine: audioEngine,
+                    spectrum: audioEngine.spectrum,
+                    outputs: outputs
+                )
+            )
+            // The window must never size itself from its content. By default a
+            // hosting controller reports the SwiftUI view's intrinsic size as a
+            // preferred size, and AppKit grows the window to satisfy it — so
+            // opening the Filters section pushed the window taller than the
+            // screen with no way back. The window owns its size; the content
+            // lays out inside whatever it is given.
+            contentController.sizingOptions = []
+            // The content column runs to the top of the window rather than
+            // starting below the titlebar. Without this it is inset by the
+            // titlebar height to match the sidebar, which leaves an empty strip
+            // above the Equalizer heading; with it, the heading and its controls
+            // sit level with the traffic lights, as they should.
+            contentController.safeAreaRegions = []
+
+            let content = NSSplitViewItem(viewController: contentController)
+            content.minimumThickness = 720
+            splitViewController.addSplitViewItem(content)
+
+            let window = NSWindow(contentViewController: splitViewController)
+            window.title = "eqR"
+            window.styleMask = [
+                .titled, .closable, .miniaturizable, .resizable, .fullSizeContentView,
+            ]
+            // Deliberately *not* setting `titlebarAppearsTransparent`: with a
+            // unified toolbar and a full-height sidebar item, AppKit already
+            // blends the titlebar into both columns, and forcing transparency
+            // made it draw as a separate strip above the sidebar instead.
+            //
+            // The titlebar carries the title, but as a toolbar item rather than
+            // the window's own: AppKit suppresses the `toggleSidebar` item
+            // whenever the window title is visible, and the toolbar item lands
+            // in the same place without costing us the toggle. `window.title`
+            // stays set for the Window menu and accessibility.
+            window.titleVisibility = .hidden
+
+            // No rule under the titlebar: the page and the titlebar are the same
+            // material now, so a separator is the only edge in an otherwise
+            // continuous surface, and it reads as a stray line above the
+            // Equalizer block.
+            //
+            // Each split view item resolves its own style and wins over the
+            // window's, so all three are set — and set *after* the items are
+            // installed, since assigning before `addSplitViewItem` is discarded.
+            window.titlebarSeparatorStyle = .none
+            sidebar.titlebarSeparatorStyle = .none
+            content.titlebarSeparatorStyle = .none
+            // `titlebarSeparatorStyle` alone leaves a 1 pt stroke along the
+            // bottom of the titlebar — that rule belongs to the opaque titlebar
+            // backdrop, not to the separator. Making the titlebar transparent
+            // drops the backdrop and its stroke, and the window material behind
+            // it is now the same surface the content column draws, so the two
+            // meet seamlessly.
+            window.titlebarAppearsTransparent = true
+
+            let toolbar = NSToolbar(identifier: "eqRMainToolbar")
+            toolbar.delegate = self
+            toolbar.allowsUserCustomization = false
+            toolbar.displayMode = .iconOnly
+            window.toolbar = toolbar
+            // Unified, not unifiedCompact: System Settings uses the full-height
+            // titlebar, and the compact one sits so close to the sidebar's
+            // search field that the two run together.
+            window.toolbarStyle = .unified
+
+            window.isReleasedWhenClosed = false
+            // Tab has to reach controls that did not exist when the window was
+            // built. This defaults to false for a window created in code rather
+            // than loaded from a nib, and with it false AppKit works out the
+            // key-view loop once and never revisits it — so a parametric band
+            // added afterwards had fields that Tab did not know about, and
+            // tabbing off the last row it *did* know about wrapped to the top.
+            //
+            // It looked like a bug about the last row, which is what made it
+            // hard to see: the give-away was that four bands behaved differently
+            // depending on how you arrived at four, because removing a band
+            // invalidates the loop and forces the rebuild that adding one does
+            // not.
+            window.autorecalculatesKeyViewLoop = true
+            window.contentMinSize = MainWindowGeometry.minimum
+            window.setContentSize(
+                MainWindowGeometry.openingSize(visibleFrame: NSScreen.main?.visibleFrame.size))
+            window.center()
+            // Closing this window only orders it out — SwiftUI's `onDisappear`
+            // never fires, so without a delegate the spectrum analyzer would
+            // keep running its 60 Hz timer against a window nobody can see.
+            window.delegate = self
+            mainWindow = window
+        }
+        if let mainWindow { AppActivation.bringForward(mainWindow) }
+        // Nothing starts out focused.
+        //
+        // This window is closed by ordering out and reopened by ordering back
+        // in, and AppKit restores the first responder it had — which, once a
+        // parametric band exists, is a text field holding a number, arriving
+        // selected and ready to be typed over by anyone who reopens the window
+        // and presses a key. Clearing it twice: once now, and once after the
+        // window has finished becoming key, since the key-view loop is settled
+        // by then and can otherwise hand the focus straight back.
+        mainWindow?.makeFirstResponder(nil)
+        DispatchQueue.main.async { [weak self] in
+            self?.mainWindow?.makeFirstResponder(nil)
+        }
+        audioEngine.spectrum.start()
+    }
+
+}
+
+/// Analysis follows the window's visibility.
+///
+/// The analyzer drives the plot's backdrop and nothing else, so it should run
+/// only while there is a plot on screen. `orderOut:` doesn't remove the hosting
+/// view from its window, so the view's own appearance callbacks can't be trusted
+/// for this — the window has to say.
+extension AppDelegate: NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        guard window === mainWindow else { return }
+        audioEngine.spectrum.stop()
+    }
+
+    /// Also covers minimising and being fully covered by another window, where
+    /// the plot is just as invisible as it is when closed.
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === mainWindow else { return }
+        if window.occlusionState.contains(.visible) {
+            audioEngine.spectrum.start()
+        } else {
+            audioEngine.spectrum.stop()
+        }
+    }
+}
+
+/// Toolbar for the main window: nothing but the tracking separator that keeps
+/// the titlebar's divider aligned with the split.
+///
+/// The titlebar carries no title or controls — the header at the top of the
+/// content column carries them, against the graph they act on. The toolbar stays
+/// because the sidebar's full-height layout is defined against it.
+///
+/// All three methods are implemented because `NSToolbar` treats them as
+/// required, whatever Swift's optional conformance suggests: assign a delegate
+/// missing `toolbar(_:itemForItemIdentifier:willBeInsertedIntoToolbar:)` and
+/// AppKit logs "invalid delegate … does not implement all required methods" and
+/// then *discards it* — `toolbar.delegate` reads back nil. The identifiers below
+/// are never asked for, no separator is made, and the toolbar the layout is
+/// defined against is empty.
+extension AppDelegate: NSToolbarDelegate {
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.sidebarTrackingSeparator]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.sidebarTrackingSeparator, .flexibleSpace]
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        guard itemIdentifier == .sidebarTrackingSeparator,
+            let splitViewController
+        else { return nil }
+
+        // Divider zero: the one between the sidebar and the content column.
+        return NSTrackingSeparatorToolbarItem(
+            identifier: itemIdentifier,
+            splitView: splitViewController.splitView,
+            dividerIndex: 0
+        )
+    }
+}

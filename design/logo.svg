@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>eqR — Equalizer icon</title>
+<defs>
+ <linearGradient id="spectrum" x1="270" y1="0" x2="754" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#00DDF1"/><stop offset=".5" stop-color="#397AFF"/><stop offset="1" stop-color="#DA20F2"/></linearGradient>
+ <radialGradient id="background" cx=".45" cy=".32" r=".85"><stop stop-color="#101524"/><stop offset="1" stop-color="#05040C"/></radialGradient>
+ <linearGradient id="rim" x1="64" y1="128" x2="960" y2="896" gradientUnits="userSpaceOnUse"><stop stop-color="#00DDF1"/><stop offset=".5" stop-color="#3B63FF"/><stop offset="1" stop-color="#CE19F3"/></linearGradient>
+</defs>
+<rect x="20" y="20" width="984" height="984" rx="216" fill="url(#background)"/>
+<rect x="29" y="29" width="966" height="966" rx="208" fill="none" stroke="url(#rim)" stroke-width="9"/>
+<!-- Five balanced bars: centers 288,400,512,624,736; overall bounds x=248..776, y=280..744 -->
+<g fill="url(#spectrum)">
+<rect x="248" y="450" width="80" height="124" rx="40"/>
+<rect x="360" y="376" width="80" height="272" rx="40"/>
+<rect x="472" y="280" width="80" height="464" rx="40"/>
+<rect x="584" y="376" width="80" height="272" rx="40"/>
+<rect x="696" y="450" width="80" height="124" rx="40"/>
+</g>
+</svg>

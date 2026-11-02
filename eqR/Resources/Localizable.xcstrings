@@ -1,0 +1,1320 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@ copy" : {
+      "comment" : "Name of a duplicated preset, such as “Jazz copy”"
+    },
+    "%@ decibels" : {
+      "comment" : "Gain, for VoiceOver, such as “+2.5 decibels”"
+    },
+    "%@ downloaded" : {
+      "comment" : "AutoEq catalog download progress, size unknown, such as “2 MB downloaded”"
+    },
+    "%@ hertz" : {
+
+    },
+    "%@ of %@" : {
+      "comment" : "AutoEq catalog download progress, such as “2 MB of 5 MB”",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ of %2$@"
+          }
+        }
+      }
+    },
+    "%@ · %lld filters · Preamp %@" : {
+      "comment" : "Import sheet heading: preset name, filter count, and output trim",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %#@filters@ · Preamp %3$@"
+          },
+          "substitutions" : {
+            "filters" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg filter"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg filters"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%@, playing %@" : {
+      "comment" : "Output device, for VoiceOver: device name and its preset",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, playing %2$@"
+          }
+        }
+      }
+    },
+    "%@, playing %@, edited" : {
+      "comment" : "Output device, for VoiceOver: device name and its edited preset",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, playing %2$@, edited"
+          }
+        }
+      }
+    },
+    "%@: %@" : {
+      "comment" : "Import sheet effect row, for VoiceOver: its label and the effect",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "%@: %@ · %@" : {
+      "comment" : "Import: which filter, what changed, and the eqR limit responsible",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@ · %3$@"
+          }
+        }
+      }
+    },
+    "%lld filters" : {
+      "comment" : "Import alert: how many filters the preset brings in",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld filter"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld filters"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld filters were dropped to fit eqR’s %lld-filter limit." : {
+      "comment" : "Import alert: how many filters didn’t fit, and how many eqR holds",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%#@filters@ dropped to fit eqR’s %2$lld-filter limit."
+          },
+          "substitutions" : {
+            "filters" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg filter was"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg filters were"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld lines were skipped." : {
+      "comment" : "Import sheet: how many lines of the file the parser couldn’t read",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld line was skipped."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld lines were skipped."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld lines were skipped:" : {
+      "comment" : "Import alert: introduces the quoted lines the parser couldn’t read",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld line was skipped:"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld lines were skipped:"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld matches" : {
+      "comment" : "AutoEq catalog search: how many models match",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld match"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld matches"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld measurements" : {
+      "comment" : "AutoEq model row: how many measurements the model has",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld measurement"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld measurements"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld models" : {
+      "comment" : "AutoEq catalog: how many headphone models it has",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld model"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld models"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld parametric bands" : {
+      "comment" : "Import limit: how many parametric bands eqR holds",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld parametric band"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld parametric bands"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld values are beyond the ±12 dB graphic range." : {
+      "comment" : "AutoEq catalog notice: values kept outside the graphic sliders’ range",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld value is beyond the ±12 dB graphic range."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld values are beyond the ±12 dB graphic range."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld values were adjusted to fit eqR’s limits." : {
+      "comment" : "Import alert: how many values eqR changed",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld value was adjusted to fit eqR’s limits."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld values were adjusted to fit eqR’s limits."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "100%" : {
+      "comment" : "Neutral Space widening reset button"
+    },
+    "Space" : {
+      "comment" : "Quick EQ slider: stereo width"
+    },
+    "Space Stereo Width" : {
+
+    },
+    "Space stereo width control; widen the soundstage or collapse to mono" : {
+
+    },
+    "A band boosts or cuts one frequency, on top of the Graphic sliders. Add one below, or double-click the graph where you want it." : {
+
+    },
+    "A gentle all-round tune-up: a little low-end weight, less boxiness and glare, more air." : {
+      "comment" : "Built-in preset description: Balanced"
+    },
+    "A wider stereo image with extra treble." : {
+      "comment" : "Built-in preset description: Space"
+    },
+    "AUTO" : {
+      "comment" : "Automatic gain switch, written in capitals as a badge"
+    },
+    "About" : {
+
+    },
+    "About eqR" : {
+
+    },
+    "Actions" : {
+      "comment" : "Band list column: the row’s buttons"
+    },
+    "Add" : {
+      "comment" : "Open panel button: excludes the chosen apps"
+    },
+    "Add Band" : {
+
+    },
+    "Add Preset" : {
+
+    },
+    "Add a parametric band" : {
+      "comment" : "Add Band help tag"
+    },
+    "Add…" : {
+
+    },
+    "Adjusted" : {
+      "comment" : "Import sheet status: value changed"
+    },
+    "Allow Audio Access" : {
+      "comment" : "Menu bar extra row: opens Settings to give the audio permission"
+    },
+    "Allow…" : {
+      "comment" : "Button: asks macOS for the audio permission, which shows its prompt"
+    },
+    "An equalizer has to reach the sound to change it. eqR reads audio on its way to your speakers, adjusts it, and plays it straight back. Nothing is recorded, stored, or sent anywhere, and quitting eqR hands the audio back immediately." : {
+      "comment" : "What the audio permission is for, shown before macOS asks"
+    },
+    "Another copy of eqR is running." : {
+      "comment" : "Alert title at launch, when eqR is already running"
+    },
+    "Appearance" : {
+
+    },
+    "Apps turned on below play straight to the output, without EQ." : {
+
+    },
+    "At login, eqR opens in the menu bar, without a window." : {
+
+    },
+    "Audio Diagnostics" : {
+
+    },
+    "Audio Permission Needed" : {
+      "comment" : "Menu bar extra row: the permission was refused; opens Settings"
+    },
+    "AutoEq" : {
+
+    },
+    "AutoEq publishes correction curves for a large catalog of headphones and earphones. Its web app can write a correction as an EqualizerAPO parametric EQ, which eqR imports." : {
+
+    },
+    "AutoEq sent an unexpected response." : {
+      "comment" : "AutoEq error"
+    },
+    "AutoEq sent data eqR couldn’t read." : {
+      "comment" : "AutoEq error"
+    },
+    "Automatic gain" : {
+
+    },
+    "Band %lld" : {
+
+    },
+    "Band %lld Q" : {
+      "comment" : "Band knob, for VoiceOver: the band’s width"
+    },
+    "Band %lld color" : {
+
+    },
+    "Band %lld frequency" : {
+      "comment" : "Band knob, for VoiceOver"
+    },
+    "Band %lld gain" : {
+      "comment" : "Band knob, for VoiceOver"
+    },
+    "Band %lld type" : {
+
+    },
+    "Bass" : {
+      "comment" : "Quick EQ slider: low frequencies"
+    },
+    "Bell" : {
+      "comment" : "Filter type"
+    },
+    "Blue" : {
+      "comment" : "Band color name"
+    },
+    "Browse AutoEq Catalog" : {
+
+    },
+    "Browse AutoEq Catalog…" : {
+
+    },
+    "Browse AutoEq headphone corrections" : {
+
+    },
+    "Browsers can’t be excluded: they play through a helper process that macOS shares between apps." : {
+
+    },
+    "Built-In" : {
+
+    },
+    "Cancel" : {
+
+    },
+    "Change the band’s color" : {
+
+    },
+    "Changes eqR Will Make" : {
+
+    },
+    "Checking for AutoEq updates…" : {
+      "comment" : "AutoEq progress"
+    },
+    "Choose EqualizerAPO" : {
+
+    },
+    "Choose a Target" : {
+
+    },
+    "Choose a measurement first" : {
+      "comment" : "Target pop-up, before a measurement"
+    },
+    "Choose a model first" : {
+      "comment" : "Measurement pop-up, before a model"
+    },
+    "Choose a model to get started." : {
+
+    },
+    "Choose an EqualizerAPO (.txt) or eqR (.eqr, .coreeq, .json) preset file." : {
+      "comment" : "Open panel message"
+    },
+    "Choose the sound you want the correction to aim for, and adjust it if you like." : {
+
+    },
+    "Choose whether eqR pauses while recording" : {
+
+    },
+    "Clear search" : {
+
+    },
+    "Clearer voices and tamer explosions." : {
+      "comment" : "Built-in preset description: Movies & Dialogue"
+    },
+    "Click “Paste from Clipboard” below, or drop the .txt file onto the preset list." : {
+
+    },
+    "Clip every gain beyond ±12 dB, and use a graphic slider where one fits" : {
+
+    },
+    "Collapsed" : {
+      "comment" : "Menu row, for VoiceOver: list hidden"
+    },
+    "Comparison" : {
+
+    },
+    "Comparison slot" : {
+
+    },
+    "Compute the trim from the chain, so a boosted preset stays at the loudness it started from" : {
+      "comment" : "Automatic gain help tag, while off"
+    },
+    "Computing correction in eqR…" : {
+
+    },
+    "Copied" : {
+      "comment" : "Diagnostics: the report was copied"
+    },
+    "Copy" : {
+      "comment" : "Diagnostics: copies the report"
+    },
+    "Copy or Download" : {
+
+    },
+    "Copy the generated filters to the clipboard, or download them as a .txt file." : {
+
+    },
+    "Couldn’t Export Preset" : {
+
+    },
+    "Couldn’t Import Preset" : {
+
+    },
+    "Couldn’t Load the AutoEq Catalog" : {
+
+    },
+    "Create, find, or import a preset" : {
+
+    },
+    "Data from AutoEq · MIT, Jaakko Pasanen" : {
+      "comment" : "AutoEq catalog credit: the data’s source and license"
+    },
+    "Delete" : {
+
+    },
+    "Delete “%@”?" : {
+
+    },
+    "Details" : {
+
+    },
+    "Diagnostics" : {
+
+    },
+    "Discard changes and return to the saved preset" : {
+
+    },
+    "Done" : {
+
+    },
+    "Downloading the AutoEq catalog…" : {
+      "comment" : "AutoEq progress"
+    },
+    "Drag or scroll to set; double-click the knob to return to 0 dB" : {
+      "comment" : "Gain knob help tag"
+    },
+    "Drag or scroll to set; double-click the knob to return to 1 kHz" : {
+      "comment" : "Frequency knob help tag"
+    },
+    "Drag or scroll to set; double-click the knob to return to the default width" : {
+      "comment" : "Q knob help tag"
+    },
+    "Drag to set; double-click to return to the preset’s value" : {
+      "comment" : "Preamp slider help tag"
+    },
+    "Drag to widen or narrow stereo image; double-click to reset to 100%" : {
+
+    },
+    "Dropped" : {
+      "comment" : "Import sheet status: filter not imported"
+    },
+    "Duplicate" : {
+
+    },
+    "Edit as Filter" : {
+
+    },
+    "Edited" : {
+      "comment" : "Preset row, for VoiceOver: has unsaved changes"
+    },
+    "Editor" : {
+
+    },
+    "Effect on the Response" : {
+
+    },
+    "Equalizer" : {
+      "comment" : "Menu bar extra switch, for VoiceOver"
+    },
+    "Equalizer Unavailable" : {
+      "comment" : "Menu bar extra row: eqR couldn’t start equalizing"
+    },
+    "Equalizer unavailable" : {
+      "comment" : "Warning icon, for VoiceOver"
+    },
+    "EqualizerAPO…" : {
+
+    },
+    "Equalizes everything you hear, with no driver and nothing left behind." : {
+
+    },
+    "Equalizing the sound on “%@”." : {
+      "comment" : "Engine status: the output device being equalized"
+    },
+    "Exclude %@" : {
+
+    },
+    "Exclusions" : {
+
+    },
+    "Expanded" : {
+      "comment" : "Menu row, for VoiceOver: list shown"
+    },
+    "Export Preset" : {
+      "comment" : "Save panel title"
+    },
+    "Extra change from clipping" : {
+      "comment" : "Import sheet: what clipping to ±12 dB adds to the effect"
+    },
+    "Filter %lld · %@, %@ Hz, Q %@" : {
+      "comment" : "Import sheet: which filter of the file, its type, frequency, and Q",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Filter %1$lld · %2$@, %3$@ Hz, Q %4$@"
+          }
+        }
+      }
+    },
+    "First %lld matches" : {
+      "comment" : "AutoEq catalog search: only the first page of matches is shown"
+    },
+    "Footsteps and positional cues lifted in games, with the low-end rumble pulled back." : {
+      "comment" : "Built-in preset description: Footsteps"
+    },
+    "Frequency" : {
+      "comment" : "Band list column"
+    },
+    "Frequency response" : {
+
+    },
+    "Fuller lows and highs at low volume." : {
+      "comment" : "Built-in preset description: Night Listening"
+    },
+    "Gain" : {
+      "comment" : "Band list column"
+    },
+    "General" : {
+
+    },
+    "GitHub is limiting downloads. Try again later." : {
+      "comment" : "AutoEq error: GitHub refused because of too many requests"
+    },
+    "Granted" : {
+      "comment" : "Audio permission status"
+    },
+    "Graphic" : {
+
+    },
+    "Green" : {
+      "comment" : "Band color name"
+    },
+    "High Pass" : {
+      "comment" : "Filter type"
+    },
+    "High Shelf" : {
+      "comment" : "Filter type"
+    },
+    "Holding the audio device keeps a Mac awake. eqR lets go after half a minute of silence and takes it back the moment something plays. Turn this off if your audio misbehaves." : {
+
+    },
+    "Import" : {
+      "comment" : "Import sheet: the import’s effect"
+    },
+    "Import Preset" : {
+      "comment" : "Open panel title"
+    },
+    "Import Preset?" : {
+
+    },
+    "Import Preset…" : {
+
+    },
+    "Import adjustments" : {
+
+    },
+    "Import and Clip to ±12 dB" : {
+
+    },
+    "Import by Hand…" : {
+
+    },
+    "Import from AutoEq by Hand" : {
+
+    },
+    "Import from AutoEq by hand" : {
+
+    },
+    "Import into eqR" : {
+
+    },
+    "Import with Adjustments" : {
+
+    },
+    "Imported Preset" : {
+      "comment" : "Name of an imported preset with no name"
+    },
+    "Indigo" : {
+      "comment" : "Band color name"
+    },
+    "Keep every value eqR can represent, exactly as written" : {
+
+    },
+    "Keeps screen recordings from capturing the sound twice" : {
+
+    },
+    "Kept Beyond the Graphic Range" : {
+
+    },
+    "Kept exact" : {
+      "comment" : "Import sheet status: value imported unchanged"
+    },
+    "Last selection, not playing." : {
+
+    },
+    "Leaving apps out needs macOS 26 or later. On this Mac, eqR equalizes every app." : {
+
+    },
+    "Lets the Mac sleep on schedule while eqR is running" : {
+
+    },
+    "Loading correction…" : {
+
+    },
+    "Low Pass" : {
+      "comment" : "Filter type"
+    },
+    "Low Shelf" : {
+      "comment" : "Filter type"
+    },
+    "Measurement source" : {
+      "comment" : "Measurement pop-up, for VoiceOver"
+    },
+    "Measurement source:" : {
+
+    },
+    "Mid" : {
+      "comment" : "Quick EQ slider: middle frequencies"
+    },
+    "More body and less boxiness for thin built-in speakers and cheap earbuds." : {
+      "comment" : "Built-in preset description: Laptop Speakers"
+    },
+    "More low end without the mud." : {
+      "comment" : "Built-in preset description: Bass Boost"
+    },
+    "My Presets" : {
+
+    },
+    "Natural detail and air, with a touch less boom." : {
+      "comment" : "Built-in preset description: Acoustic"
+    },
+    "New Preset" : {
+      "comment" : "Name of a newly created preset"
+    },
+    "No Bands" : {
+
+    },
+    "No Models" : {
+
+    },
+    "No Output Device" : {
+      "comment" : "Shown when the Mac has no output"
+    },
+    "No Output Devices" : {
+      "comment" : "Menu bar extra row: the Mac has no output device"
+    },
+    "No Results for “%@”" : {
+
+    },
+    "No apps are excluded." : {
+
+    },
+    "No audible change." : {
+      "comment" : "Import sheet: the response is unchanged"
+    },
+    "No change: the sound exactly as it arrives." : {
+      "comment" : "Built-in preset description: Flat"
+    },
+    "No correction target matches this model." : {
+      "comment" : "AutoEq error"
+    },
+    "No matches" : {
+      "comment" : "AutoEq catalog search: nothing found"
+    },
+    "None" : {
+      "comment" : "Pop-up value, for VoiceOver"
+    },
+    "Not Equalizing" : {
+
+    },
+    "Not Receiving Audio" : {
+      "comment" : "Menu bar extra row: sound is playing but none reaches eqR"
+    },
+    "Not asked yet" : {
+      "comment" : "Audio permission status"
+    },
+    "Not granted" : {
+      "comment" : "Audio permission status"
+    },
+    "Not measurable: the correction has a value eqR can’t render." : {
+      "comment" : "Import sheet: why the change to the response can’t be measured"
+    },
+    "Not running" : {
+      "comment" : "Audio permission status: eqR hasn’t needed it yet"
+    },
+    "OK" : {
+
+    },
+    "Off" : {
+      "comment" : "Switch state, for VoiceOver"
+    },
+    "On" : {
+      "comment" : "Band list column: band turned on\nSwitch state, for VoiceOver"
+    },
+    "Only targets compatible with this measurement source, rig, and form are available" : {
+
+    },
+    "Open Equalizer" : {
+      "comment" : "Menu item: shows the main window"
+    },
+    "Open System Settings" : {
+      "comment" : "Button: opens Privacy & Security in System Settings"
+    },
+    "Open autoeq.app" : {
+
+    },
+    "Open autoeq.app in Browser" : {
+
+    },
+    "Open eqR at login" : {
+
+    },
+    "Open eqR settings" : {
+
+    },
+    "Open the diagnostics report" : {
+
+    },
+    "Orange" : {
+      "comment" : "Band color name"
+    },
+    "Output" : {
+      "comment" : "Menu bar extra section: output device"
+    },
+    "Output Mode" : {
+
+    },
+    "Output device" : {
+
+    },
+    "Output trim" : {
+      "comment" : "Import sheet: the adjusted value is the preamp"
+    },
+    "Output trim applied after the whole chain; use it to give back the headroom a boosted preset takes" : {
+
+    },
+    "Parametric" : {
+
+    },
+    "Paste Preset" : {
+
+    },
+    "Paste a preset from the clipboard (⌘V)" : {
+
+    },
+    "Paste from Clipboard" : {
+
+    },
+    "Pause while recording system audio" : {
+
+    },
+    "Paused While Recording" : {
+      "comment" : "Heading and menu bar extra row: eqR stepped aside for a screen recording"
+    },
+    "Pink" : {
+      "comment" : "Band color name"
+    },
+    "Play Preview" : {
+
+    },
+    "Playing preview" : {
+
+    },
+    "Point at a handle to read its value; drag it to adjust; double-click to reset it" : {
+
+    },
+    "Preamp" : {
+
+    },
+    "Preamp: %@" : {
+      "comment" : "Import alert: the preset’s output trim, such as “Preamp: −6.0 dB”"
+    },
+    "Preparing the AutoEq catalog…" : {
+      "comment" : "AutoEq progress"
+    },
+    "Preset" : {
+      "comment" : "Menu bar extra section: active preset"
+    },
+    "Preset name" : {
+
+    },
+    "Preview follows your selection." : {
+
+    },
+    "Preview response curve" : {
+
+    },
+    "Purple" : {
+      "comment" : "Band color name"
+    },
+    "Q" : {
+      "comment" : "Band list column: the band’s width"
+    },
+    "Quick EQ" : {
+      "comment" : "Menu bar extra section: bass, mid, and treble controls"
+    },
+    "Quit This Copy" : {
+      "comment" : "Alert button"
+    },
+    "Quit eqR" : {
+      "comment" : "Menu item"
+    },
+    "Quit the Other Copy" : {
+      "comment" : "Alert button"
+    },
+    "Red" : {
+      "comment" : "Band color name"
+    },
+    "Refresh" : {
+
+    },
+    "Relaunch eqR" : {
+      "comment" : "Button: quits and reopens eqR"
+    },
+    "Release Notes" : {
+
+    },
+    "Release the audio device when nothing is playing" : {
+
+    },
+    "Remove" : {
+
+    },
+    "Remove Band" : {
+
+    },
+    "Remove band %lld" : {
+
+    },
+    "Remove this band" : {
+
+    },
+    "Rename" : {
+
+    },
+    "Requires macOS 26" : {
+
+    },
+    "Reset Space Width" : {
+
+    },
+    "Reset Space stereo width to 100% (neutral)" : {
+
+    },
+    "Reset Band" : {
+
+    },
+    "Reset Gain" : {
+
+    },
+    "Reset to Preset" : {
+
+    },
+    "Response changes by up to %@ dB (%@ dB RMS)." : {
+      "comment" : "AutoEq catalog notice: the largest and the average change",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Response changes by up to %1$@ dB (%2$@ dB RMS)."
+          }
+        }
+      }
+    },
+    "Revert" : {
+
+    },
+    "Save Changes" : {
+
+    },
+    "Saving will adjust %lld values to fit eqR’s limits." : {
+      "comment" : "AutoEq catalog notice: how many values importing would change",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Saving will adjust %lld value to fit eqR’s limits."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Saving will adjust %lld values to fit eqR’s limits."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Screen recordings capture both your apps’ sound and eqR’s equalized copy, which sounds doubled. eqR steps aside until the recording stops." : {
+      "comment" : "Why eqR pauses while a screen recording captures system audio"
+    },
+    "Search" : {
+
+    },
+    "Search for your headphone or earphone model in your browser." : {
+
+    },
+    "Search headphones" : {
+
+    },
+    "Set automatically while Auto is on; drag to set it by hand" : {
+      "comment" : "Preamp slider help tag, while automatic gain is on"
+    },
+    "Settings" : {
+
+    },
+    "Settings…" : {
+      "comment" : "Menu item: opens eqR’s Settings window"
+    },
+    "Show Diagnostics" : {
+
+    },
+    "Source Code" : {
+
+    },
+    "Speech forward and rumble cut, for podcasts, audiobooks, and calls." : {
+      "comment" : "Built-in preset description: Voice"
+    },
+    "Start eqR automatically, in the menu bar, when you log in" : {
+
+    },
+    "System" : {
+
+    },
+    "System Audio Not Allowed" : {
+      "comment" : "Menu bar extra row: eqR couldn’t capture system audio"
+    },
+    "System Audio Recording" : {
+
+    },
+    "System-wide equalizer" : {
+
+    },
+    "Target curve" : {
+      "comment" : "Target pop-up, for VoiceOver"
+    },
+    "Target curve:" : {
+
+    },
+    "Teal" : {
+      "comment" : "Band color name"
+    },
+    "The AutoEq catalog is empty." : {
+      "comment" : "AutoEq error"
+    },
+    "The audio device eqR built around “%@” reported no output channels, so there’s nowhere to send the equalized sound." : {
+      "comment" : "Engine failure: the output device has no channels"
+    },
+    "The change can’t be measured." : {
+      "comment" : "AutoEq catalog notice: the change to the response is unknown"
+    },
+    "The clipboard doesn’t contain a preset." : {
+      "comment" : "Paste Preset error message"
+    },
+    "The correction uses filters eqR can’t apply (%@)." : {
+      "comment" : "AutoEq error: the filter type code follows in parentheses"
+    },
+    "The eqR preset is damaged and can’t be read." : {
+      "comment" : "Import error"
+    },
+    "The file is too large to be a preset." : {
+      "comment" : "Import error"
+    },
+    "The file isn’t a text preset." : {
+      "comment" : "Import error"
+    },
+    "The other copy is at:\n%@" : {
+      "comment" : "Alert message: where the other copy of eqR is installed"
+    },
+    "The preset contains a filter type eqR doesn’t support." : {
+      "comment" : "Import error"
+    },
+    "The preset doesn’t contain any filters eqR can read." : {
+      "comment" : "Import error"
+    },
+    "The preset is empty." : {
+      "comment" : "Import error"
+    },
+    "The preset “%@” no longer exists." : {
+      "comment" : "Export error"
+    },
+    "The system audio arrived in a format eqR can’t equalize: it needs 32-bit floating-point samples." : {
+      "comment" : "Engine failure: the audio tap delivered an unsupported sample format"
+    },
+    "The trim is computed from the chain; turn this off to set it by hand" : {
+      "comment" : "Automatic gain help tag, while on"
+    },
+    "Theme" : {
+
+    },
+    "There’s no published correction eqR supports for this measurement." : {
+      "comment" : "AutoEq error"
+    },
+    "These are kept exactly, as parametric bands beyond the sliders’ ±12 dB range. You can clip their gains to ±12 dB instead." : {
+
+    },
+    "TokyoNight" : {
+
+    },
+    "TokyoNight applies the TokyoNight nocturnal palette to the equalizer, response curve, and controls." : {
+
+    },
+    "Treble" : {
+      "comment" : "Quick EQ slider: high frequencies"
+    },
+    "Try Again" : {
+
+    },
+    "Turn on eqR under Screen & System Audio Recording, then choose Quit & Reopen when macOS asks." : {
+      "comment" : "Permission instructions. “Quit & Reopen” is the button macOS shows; use its translation."
+    },
+    "Turn on eqR under Screen & System Audio Recording. If it’s already on, turn it off and on again: an update gives eqR a new signature, and macOS keeps the old entry. Then relaunch eqR." : {
+      "comment" : "Permission instructions, when macOS can’t say whether it was refused"
+    },
+    "Turn the equalizer off" : {
+      "comment" : "Power button help tag"
+    },
+    "Turn the equalizer on" : {
+      "comment" : "Power button help tag"
+    },
+    "Two copies would each silence the other’s sound, so only one can run." : {
+      "comment" : "Alert message: why two copies of eqR can’t run together"
+    },
+    "Two versions of this preset; switch between them to compare" : {
+
+    },
+    "Type" : {
+      "comment" : "Band list column: filter type"
+    },
+    "Unknown Device" : {
+      "comment" : "An output device without a name"
+    },
+    "Unsupported Output Device" : {
+      "comment" : "Menu bar extra row: eqR can’t equalize this device"
+    },
+    "Up to %@ dB difference, %@ dB RMS, across 20 Hz–20 kHz." : {
+      "comment" : "Import sheet: the largest and the average change to the response",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Up to %1$@ dB difference, %2$@ dB RMS, across 20 Hz–20 kHz."
+          }
+        }
+      }
+    },
+    "Using a saved catalog. Couldn’t check for updates." : {
+
+    },
+    "Version %@" : {
+      "comment" : "About: the app’s version number"
+    },
+    "Waiting for permission to reach the sound." : {
+      "comment" : "Engine status"
+    },
+    "Waiting for the audio permission" : {
+      "comment" : "Warning icon, for VoiceOver"
+    },
+    "What eqR sees on this Mac. Include it with a bug report: it answers most questions about audio problems. It names your audio devices, your presets, and any apps you’ve excluded, and contains nothing else about you." : {
+
+    },
+    "Where AutoEq asks which equalizer you use, choose EqualizerAPO’s parametric EQ." : {
+
+    },
+    "You can’t undo this action." : {
+
+    },
+    "computed by eqR" : {
+      "comment" : "AutoEq catalog credit: eqR computed this correction itself"
+    },
+    "dropped" : {
+      "comment" : "Import sheet: a filter that won’t be imported"
+    },
+    "eqR" : {
+      "comment" : "Menu bar extra heading: the app name\nMenu bar extra tooltip: the app name\nMenu bar icon, for VoiceOver: equalizing"
+    },
+    "eqR couldn’t capture system audio (error %d). Make sure eqR is turned on in System Settings > Privacy & Security > Screen & System Audio Recording." : {
+      "comment" : "Engine failure: the audio tap couldn’t be created; the number is its error code"
+    },
+    "eqR couldn’t change its login item. Open System Settings > General > Login Items to change it there." : {
+
+    },
+    "eqR couldn’t download AutoEq data (HTTP %lld). Try again." : {
+      "comment" : "AutoEq error: the number is the HTTP status code"
+    },
+    "eqR couldn’t download AutoEq data from GitHub. Check your internet connection and try again." : {
+      "comment" : "AutoEq error"
+    },
+    "eqR couldn’t identify its own audio output, so it can’t leave itself out of what it captures. It’s leaving your sound alone and will try again." : {
+      "comment" : "Engine failure: eqR couldn’t find its own audio process"
+    },
+    "eqR couldn’t set up the audio path (error %d)." : {
+      "comment" : "Engine failure: a Core Audio call failed; the number is its error code"
+    },
+    "eqR equalizes the sound you hear. Nothing is recorded, stored, or sent anywhere." : {
+      "comment" : "Audio permission explanation, when it’s granted"
+    },
+    "eqR hasn’t needed the permission yet, so there’s nothing to report." : {
+      "comment" : "Audio permission explanation, before eqR has asked"
+    },
+    "eqR holds up to %lld parametric bands" : {
+      "comment" : "Add Band help tag, when the band limit is reached"
+    },
+    "eqR isn’t allowed to reach the sound" : {
+      "comment" : "Permission heading, after the permission was refused"
+    },
+    "eqR isn’t receiving any audio, so it’s leaving your sound alone instead of replacing it." : {
+      "comment" : "Engine failure: sound is playing but none reaches eqR"
+    },
+    "eqR isn’t receiving any audio, so it’s leaving your sound alone instead of replacing it. This is what a refused permission looks like." : {
+      "comment" : "Engine failure, when the permission seems to be refused"
+    },
+    "eqR isn’t running" : {
+      "comment" : "Warning icon, for VoiceOver"
+    },
+    "eqR isn’t running." : {
+      "comment" : "Engine status"
+    },
+    "eqR needs to reach the sound to change it" : {
+      "comment" : "Permission heading, before macOS has asked"
+    },
+    "eqR, equalizer off" : {
+      "comment" : "Menu bar icon, for VoiceOver: the equalizer is turned off"
+    },
+    "eqR, not equalizing" : {
+      "comment" : "Menu bar icon, for VoiceOver: audio isn’t reaching eqR"
+    },
+    "eqR, paused while recording" : {
+      "comment" : "Menu bar icon, for VoiceOver: stepped aside for a screen recording"
+    },
+    "eqR…" : {
+
+    },
+    "measurement by %@" : {
+      "comment" : "AutoEq catalog credit: who measured the headphones, such as “oratory1990”"
+    },
+    "±12 dB graphic range" : {
+      "comment" : "Import limit: the graphic sliders’ range"
+    },
+    "“%@” is an aggregate or multi-output device, which eqR can’t equalize. Choose a single output device." : {
+      "comment" : "Engine failure: the output device is made of several devices"
+    },
+    "… and %lld more" : {
+      "comment" : "Import alert: how many skipped lines are not quoted"
+    }
+  },
+  "version" : "1.0"
+}

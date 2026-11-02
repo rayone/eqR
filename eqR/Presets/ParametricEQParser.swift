@@ -1,0 +1,618 @@
+import Foundation
+
+/// Parses equalization profiles from standard EqualizerAPO / AutoEQ text format
+/// as well as native `.eqr` and legacy `.coreeq` JSON files.
+///
+/// Handles EqualizerAPO filter declarations:
+/// ```text
+/// Preamp: -6.4 dB
+/// Filter 1: ON PK Fc 28 Hz Gain 6.2 dB Q 2.10
+/// Filter 2: ON LSC Fc 105 Hz Gain 5.5 dB Q 0.71
+/// Filter 3: ON HSC Fc 8000 Hz Gain -3.0 dB Q 0.70
+/// Filter 4: ON HP Fc 20 Hz Q 0.71
+/// Filter 5: ON LP Fc 20000 Hz Q 0.71
+/// ```
+enum ParametricEQParser {
+    enum ParseError: Error, LocalizedError, Equatable {
+        case emptyContent
+        case noValidFiltersFound
+        case unsupportedFilterDeclaration
+        /// Starts like an `.eqr` or legacy `.coreeq` file but does not decode as one.
+        case damagedEqRFile
+        case fileTooLarge
+        /// Bytes that are not text in any encoding a preset is written in.
+        case unreadableText
+
+        var errorDescription: String? {
+            switch self {
+            case .emptyContent:
+                return String(localized: "The preset is empty.", comment: "Import error")
+            case .noValidFiltersFound:
+                return String(
+                    localized: "The preset doesn’t contain any filters eqR can read.",
+                    comment: "Import error")
+            case .unsupportedFilterDeclaration:
+                return String(
+                    localized: "The preset contains a filter type eqR doesn’t support.",
+                    comment: "Import error")
+            case .damagedEqRFile:
+                return String(
+                    localized: "The eqR preset is damaged and can’t be read.",
+                    comment: "Import error")
+            case .fileTooLarge:
+                return String(
+                    localized: "The file is too large to be a preset.", comment: "Import error")
+            case .unreadableText:
+                return String(localized: "The file isn’t a text preset.", comment: "Import error")
+            }
+        }
+    }
+
+    /// Larger than any preset — a full AutoEQ file is under a kilobyte — and
+    /// small enough that reading it on the main actor is not noticed.
+    static let maxFileSize = 1_000_000
+
+    /// Result of parsing an EqualizerAPO / AutoEQ text representation.
+    struct ParsedPreset: Equatable {
+        var name: String
+        var preamp: Double
+        var autoGain: Bool
+        var filters: [EQFilter]
+
+        /// How many free filters exceed `BuiltInProfiles.maxFreeFilters` and were
+        /// trimmed away. Zero when everything parsed fits.
+        var droppedFilterCount: Int = 0
+
+        /// Non-comment lines that are neither a Preamp nor a parsed Filter
+        /// declaration — for example `GraphicEQ:`, `Convolution:`, or `Channel:`.
+        /// Kept for the caller to report; they are informational, never fatal.
+        var unparsedLines: [String] = []
+
+        /// Values outside eqR's ranges — free gain ±20 dB, band gain and preamp ±12 dB, frequency
+        /// 20 Hz–20 kHz, Q 0.1–16 for a bell and 0.1–10 otherwise — that were clamped to fit. Counted over the
+        /// filters that were kept, so it never double-counts a dropped one.
+        var adjustedValueCount: Int = 0
+
+        /// The chains this preset could become — exact or clipped — and the
+        /// disclosure of what each choice changes.
+        var candidates: ImportCandidates
+    }
+
+    /// Decodes a preset file's bytes.
+    ///
+    /// EqualizerAPO configs are edited in Notepad, so UTF-16 with a byte-order
+    /// mark and Windows-1252 turn up as often as UTF-8. A leading BOM is removed
+    /// whichever encoding carried it: left in, it sits in front of `Preamp:` and
+    /// the line no longer parses.
+    static func decodeText(_ data: Data) throws -> String {
+        let text: String?
+        if data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF]) {
+            text = String(data: data, encoding: .utf16)
+        } else {
+            text =
+                String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: .windowsCP1252)
+        }
+        guard var text else { throw ParseError.unreadableText }
+        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+        return text
+    }
+
+    /// Parses text content in EqualizerAPO or `.eqr` / legacy `.coreeq` JSON format.
+    ///
+    /// `sampleRate` is the rate the impact of any adjustment is measured at, so
+    /// the disclosure reflects the device the preset would play through.
+    static func parse(
+        text: String,
+        defaultName: String = ProfileManager.untitledImportName,
+        sampleRate: Double = 44_100
+    ) throws -> ParsedPreset {
+        // Pasted and dropped text arrive without a file size to check first.
+        guard text.utf8.count <= maxFileSize else { throw ParseError.fileTooLarge }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ParseError.emptyContent }
+
+        // A native .eqr or legacy .coreeq file. Nothing EqualizerAPO writes starts with a
+        // brace, so one that fails to decode is a damaged file, and saying so
+        // beats handing it to the text parser to report "no valid filters".
+        if trimmed.starts(with: "{") {
+            let profile: EQProfile
+            do {
+                profile = try JSONDecoder().decode(EQProfile.self, from: Data(trimmed.utf8))
+            } catch {
+                throw ParseError.damagedEqRFile
+            }
+            // Rebuild every stored band as a rung bell — a band's frequency and
+            // Q are the ladder's, whatever the file says — so the same placement
+            // logic covers native and text presets alike.
+            let raw = profile.filters.map { filter -> EQFilter in
+                if let slot = filter.band, BuiltInProfiles.frequencies.indices.contains(slot) {
+                    return EQFilter.band(slot: slot, gain: filter.gain)
+                }
+                return filter.unbound()
+            }
+            let name = profile.name.isEmpty ? defaultName : profile.name
+            let assembly = assemble(
+                raw: raw, placements: placements(in: raw), rawPreamp: profile.preamp,
+                name: name, autoGain: profile.autoGain, sampleRate: sampleRate)
+            return ParsedPreset(
+                name: name,
+                preamp: profile.preamp.clamped(to: BuiltInProfiles.preampRange),
+                autoGain: profile.autoGain,
+                filters: assembly.exact.filters,
+                droppedFilterCount: assembly.dropped.count,
+                adjustedValueCount: assembly.adjustedValueCount,
+                candidates: ImportCandidates(
+                    exact: assembly.exact, clipped: assembly.clipped,
+                    disclosure: assembly.disclosure))
+        }
+
+        var preamp: Double = 0
+        var sawPreampLine = false
+        var rawFilters: [EQFilter] = []
+        var unparsedLines: [String] = []
+        var foundAnyDirective = false
+
+        let lines = trimmed.components(separatedBy: .newlines)
+        for line in lines {
+            let lineTrimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !lineTrimmed.isEmpty, !lineTrimmed.starts(with: "#"),
+                !lineTrimmed.starts(with: ";")
+            else {
+                continue
+            }
+
+            if let parsedPreamp = parsePreamp(from: lineTrimmed) {
+                preamp = parsedPreamp
+                sawPreampLine = true
+                foundAnyDirective = true
+                continue
+            }
+
+            if let filter = parseFilterLine(
+                from: lineTrimmed, colorIndex: rawFilters.count % EQFilter.colorCount)
+            {
+                rawFilters.append(filter)
+                foundAnyDirective = true
+            } else if isFilterDeclaration(lineTrimmed) {
+                throw ParseError.unsupportedFilterDeclaration
+            } else {
+                // Something we do not model — `GraphicEQ:`, `Convolution:`,
+                // `Channel:`, `If:` and the like. Line-level, informational, and
+                // not a reason to reject the whole preset; the caller reports it.
+                unparsedLines.append(lineTrimmed)
+            }
+        }
+
+        // A Preamp line alone is a valid config — it is what a flat preset
+        // exports as — so it is enough. Only text with neither is not a preset.
+        guard foundAnyDirective else {
+            throw ParseError.noValidFiltersFound
+        }
+
+        let assembly = assemble(
+            raw: rawFilters, placements: placements(in: rawFilters), rawPreamp: preamp,
+            name: defaultName, autoGain: !sawPreampLine, sampleRate: sampleRate)
+
+        return ParsedPreset(
+            name: defaultName,
+            preamp: preamp.clamped(to: BuiltInProfiles.preampRange),
+            // A Preamp line is the file choosing its own trim, so the computed
+            // one starts off. Without one the file has said nothing about
+            // headroom, and a boost-heavy correction would clip at 0 dB — so
+            // the trim is computed, as it is for every built-in.
+            autoGain: !sawPreampLine,
+            // Normalising is also what clamps every value into range.
+            filters: assembly.exact.filters,
+            droppedFilterCount: assembly.dropped.count,
+            unparsedLines: unparsedLines,
+            adjustedValueCount: assembly.adjustedValueCount,
+            candidates: ImportCandidates(
+                exact: assembly.exact, clipped: assembly.clipped,
+                disclosure: assembly.disclosure)
+        )
+    }
+
+    /// Where a filter belongs: on a rung, held beyond a rung's range, or free.
+    private enum Placement: Equatable {
+        case band(slot: Int)
+        case beyondBand(slot: Int)
+        case free
+    }
+
+    /// Classifies every filter as a ladder band, a beyond-band bell, or a free
+    /// filter.
+    ///
+    /// EqualizerAPO text has no notion of a ladder, so eqR writes each band
+    /// as a peaking filter at the rung's frequency with the ladder's Q — and
+    /// read back, those used to arrive as free filters. So a filter that is
+    /// exactly a rung — a bell, enabled, on a ladder frequency, at
+    /// `BuiltInProfiles.defaultQ` — goes back into that slot; the first one per
+    /// rung claims it. A gain within the graphic ±12 dB range is a band; a gain
+    /// within the free-filter ±20 dB range is a beyond-band bell, which the
+    /// user may keep exact or clip back onto the rung. Anything else is free.
+    private static func placements(in filters: [EQFilter]) -> [Placement] {
+        var taken = Set<Int>()
+        var placements: [Placement] = []
+        for filter in filters {
+            guard filter.kind == .bell, filter.isEnabled,
+                filter.q == BuiltInProfiles.defaultQ,
+                let slot = BuiltInProfiles.frequencies.firstIndex(of: filter.frequency)
+            else {
+                placements.append(.free)
+                continue
+            }
+            if BuiltInProfiles.gainRange.contains(filter.gain), !taken.contains(slot) {
+                taken.insert(slot)
+                placements.append(.band(slot: slot))
+            } else if !BuiltInProfiles.gainRange.contains(filter.gain),
+                BuiltInProfiles.filterGainRange.contains(filter.gain)
+            {
+                // A beyond-band bell does not claim its rung: it may be clipped
+                // back onto it, but a later in-range bell on the same frequency
+                // is the one that belongs on the ladder — as it always was.
+                placements.append(.beyondBand(slot: slot))
+            } else {
+                placements.append(.free)
+            }
+        }
+        return placements
+    }
+
+    /// A filter that will be stored as a free filter, tagged with its position
+    /// in the source list so trimming and disclosure refer to the same filter
+    /// even after it is unbound into a fresh value.
+    private struct FreeCandidate {
+        let rawIndex: Int
+        let filter: EQFilter
+        /// The rung a beyond-band bell could be clipped back onto, or nil.
+        let slot: Int?
+    }
+
+    /// The two chains a set of placements can become, and what an import would
+    /// disclose about the difference.
+    private struct Assembly {
+        let exact: EQProfile
+        let clipped: EQProfile
+        let dropped: [EQFilter]
+        let disclosure: ImportDisclosure
+        let adjustedValueCount: Int
+    }
+
+    /// Builds the exact and clipped chains, and the disclosure of both.
+    ///
+    /// The kept/dropped split is decided from the exact free set in *both*
+    /// modes, so choosing to clip never changes how many filters survive.
+    private static func assemble(
+        raw: [EQFilter],
+        placements: [Placement],
+        rawPreamp: Double,
+        name: String,
+        autoGain: Bool,
+        sampleRate: Double
+    ) -> Assembly {
+        var bands: [EQFilter] = []
+        var free: [FreeCandidate] = []
+        for (rawIndex, entry) in zip(raw, placements).enumerated() {
+            let (filter, placement) = entry
+            switch placement {
+            case .band(let slot):
+                bands.append(EQFilter.band(slot: slot, gain: filter.gain))
+            case .beyondBand(let slot):
+                free.append(
+                    FreeCandidate(rawIndex: rawIndex, filter: filter.unbound(), slot: slot))
+            case .free:
+                // Unbound, so a native `.eqr` or legacy `.coreeq` band that lands here loses its slot
+                // and normalises against the free-filter range the disclosure
+                // reports — not the ladder's ±12 dB.
+                free.append(FreeCandidate(rawIndex: rawIndex, filter: filter.unbound(), slot: nil))
+            }
+        }
+
+        let (keptFree, droppedFree) = trimFreeFilters(free)
+
+        // Colours in order again, now that the bands have left gaps.
+        let exactFree = keptFree.enumerated().map { index, candidate -> EQFilter in
+            var filter = candidate.filter
+            filter.colorIndex = index % EQFilter.colorCount
+            return filter
+        }
+        let preamp = rawPreamp.clamped(to: BuiltInProfiles.preampRange)
+        let exact = EQProfile(
+            name: name, filters: FilterChain.normalized(bands + exactFree),
+            preamp: preamp, autoGain: autoGain)
+
+        // Clipping returns each beyond-band bell to its rung at ±12 dB, when the
+        // rung is free. Bells on occupied rungs remain free, clipped to ±12 dB.
+        var takenSlots = Set<Int>()
+        for placement in placements {
+            if case .band(let slot) = placement { takenSlots.insert(slot) }
+        }
+        var clippedBands = bands
+        var clippedFree: [EQFilter] = []
+        for candidate in keptFree {
+            if let slot = candidate.slot, takenSlots.insert(slot).inserted {
+                clippedBands.append(
+                    EQFilter.band(
+                        slot: slot,
+                        gain: candidate.filter.gain.clamped(to: BuiltInProfiles.gainRange)))
+            } else {
+                var filter = candidate.filter
+                if candidate.slot != nil {
+                    filter.gain = filter.gain.clamped(to: BuiltInProfiles.gainRange)
+                }
+                clippedFree.append(filter)
+            }
+        }
+        let recolouredClippedFree = clippedFree.enumerated().map { index, filter -> EQFilter in
+            var filter = filter
+            filter.colorIndex = index % EQFilter.colorCount
+            return filter
+        }
+        let clipped = EQProfile(
+            name: name, filters: FilterChain.normalized(clippedBands + recolouredClippedFree),
+            preamp: preamp, autoGain: autoGain)
+
+        let adjustments = disclose(
+            raw: raw, placements: placements,
+            droppedRawIndices: Set(droppedFree.map(\.rawIndex)), rawPreamp: rawPreamp)
+        // The as-written chain, with its own trim, is what the exact result is
+        // measured against. It is not retained.
+        let intended = EQProfile(name: "", filters: raw, preamp: rawPreamp, autoGain: false)
+        let mandatoryImpact = impact(from: intended, to: exact, sampleRate: sampleRate)
+        let clipImpact = impact(from: exact, to: clipped, sampleRate: sampleRate)
+        let adjustedValueCount = adjustments.filter {
+            $0.kind != .keptBeyondBandRange && $0.kind != .droppedFilter
+        }.count
+        return Assembly(
+            exact: exact, clipped: clipped, dropped: droppedFree.map(\.filter),
+            disclosure: ImportDisclosure(
+                adjustments: adjustments, impact: mandatoryImpact, clipImpact: clipImpact),
+            adjustedValueCount: adjustedValueCount)
+    }
+
+    /// Describes every value `assemble` changes, one adjustment per change.
+    ///
+    /// A dropped filter is disclosed once, as dropped; its own out-of-range
+    /// values never reach the preset, so they are not also reported.
+    private static func disclose(
+        raw: [EQFilter],
+        placements: [Placement],
+        droppedRawIndices: Set<Int>,
+        rawPreamp: Double
+    ) -> [ImportAdjustment] {
+        var adjustments: [ImportAdjustment] = []
+        for (index, entry) in zip(raw, placements).enumerated() {
+            let (filter, placement) = entry
+            let identity = ImportAdjustment.FilterIdentity(
+                index: index, frequency: filter.frequency, q: filter.q, kind: filter.kind)
+            if droppedRawIndices.contains(index) {
+                adjustments.append(
+                    ImportAdjustment(
+                        kind: .droppedFilter, filter: identity, original: nil, adjusted: nil,
+                        limit: String(
+                            localized: "\(BuiltInProfiles.maxFreeFilters) parametric bands",
+                            bundle: .eqR,
+                            comment: "Import limit: how many parametric bands eqR holds")))
+                continue
+            }
+            switch placement {
+            case .band:
+                // A band carries only its gain, which the placement proved is
+                // already within range.
+                break
+            case .beyondBand:
+                adjustments.append(
+                    ImportAdjustment(
+                        kind: .keptBeyondBandRange, filter: identity, original: filter.gain,
+                        adjusted: filter.gain,
+                        limit: String(
+                            localized: "±12 dB graphic range",
+                            comment: "Import limit: the graphic sliders’ range")))
+            case .free:
+                if abs(filter.gain) > BuiltInProfiles.filterGainRange.upperBound {
+                    adjustments.append(
+                        ImportAdjustment(
+                            kind: .gain, filter: identity, original: filter.gain,
+                            adjusted: filter.gain.clamped(to: BuiltInProfiles.filterGainRange),
+                            limit: "±20 dB"))
+                }
+                let qRange = BuiltInProfiles.qRange(for: filter.kind)
+                if !qRange.contains(filter.q) {
+                    adjustments.append(
+                        ImportAdjustment(
+                            kind: .q, filter: identity, original: filter.q,
+                            adjusted: filter.q.clamped(to: qRange),
+                            limit: String(format: "%g–%g", qRange.lowerBound, qRange.upperBound)))
+                }
+                if !BuiltInProfiles.filterFrequencyRange.contains(filter.frequency) {
+                    adjustments.append(
+                        ImportAdjustment(
+                            kind: .frequency, filter: identity, original: filter.frequency,
+                            adjusted: filter.frequency.clamped(
+                                to: BuiltInProfiles.filterFrequencyRange),
+                            limit: "20 Hz–20 kHz"))
+                }
+            }
+        }
+        if !BuiltInProfiles.preampRange.contains(rawPreamp) {
+            adjustments.append(
+                ImportAdjustment(
+                    kind: .preamp, filter: nil, original: rawPreamp,
+                    adjusted: rawPreamp.clamped(to: BuiltInProfiles.preampRange),
+                    limit: "±12 dB"))
+        }
+        return adjustments
+    }
+
+    /// Measures `intended` against `committed`, or reports the impact as
+    /// unmeasurable when either chain holds a filter with no response.
+    private static func impact(
+        from intended: EQProfile, to committed: EQProfile, sampleRate: Double
+    ) -> ImportImpact {
+        guard
+            let result = ImportImpactCalculator.difference(
+                from: intended, to: committed, sampleRate: sampleRate)
+        else {
+            return .unmeasurable
+        }
+        return ImportImpact(rmsDB: result.rmsDB, maxDB: result.maxDB)
+    }
+
+    /// Keeps pass filters first up to the hard cap, then fills the remaining
+    /// budget with the strongest gain-bearing filters while retaining source
+    /// order. Returns the filters that were dropped, in source order, so the
+    /// caller can disclose each one.
+    private static func trimFreeFilters(
+        _ candidates: [FreeCandidate]
+    ) -> (
+        kept: [FreeCandidate],
+        dropped: [FreeCandidate]
+    ) {
+        guard candidates.count > BuiltInProfiles.maxFreeFilters else { return (candidates, []) }
+
+        let passIndices = candidates.indices.filter {
+            candidates[$0].filter.kind == .highPass || candidates[$0].filter.kind == .lowPass
+        }
+        let keptPassIndices = Array(passIndices.prefix(BuiltInProfiles.maxFreeFilters))
+        let remaining = BuiltInProfiles.maxFreeFilters - keptPassIndices.count
+        let passSet = Set(passIndices)
+        let gainBearingIndices = candidates.indices.filter { !passSet.contains($0) }
+        let strongest = gainBearingIndices.sorted {
+            abs(candidates[$0].filter.gain) > abs(candidates[$1].filter.gain)
+        }.prefix(remaining)
+        let keptIndices = Set(keptPassIndices).union(strongest)
+        let kept = candidates.indices.filter { keptIndices.contains($0) }.map { candidates[$0] }
+        let dropped = candidates.indices.filter { !keptIndices.contains($0) }.map {
+            candidates[$0]
+        }
+        return (kept, dropped)
+    }
+
+    private static func isFilterDeclaration(_ line: String) -> Bool {
+        line.range(of: #"^Filter(?:\s*\d+)?\s*:"#, options: [.regularExpression, .caseInsensitive])
+            != nil
+    }
+
+    // MARK: - Line Parsers
+
+    /// Parses lines such as:
+    /// `Preamp: -6.4 dB`
+    /// `Preamp: -6.4dB`
+    /// `Preamp: 3.5`
+    static func parsePreamp(from line: String) -> Double? {
+        let pattern = #"^Preamp\s*:\s*([+-]?\d+(?:\.\d+)?)\s*(?:dB)?$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+            let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+            let range = Range(match.range(at: 1), in: line)
+        else {
+            return nil
+        }
+        return Double(line[range])
+    }
+
+    /// Parses EqualizerAPO filter line definitions:
+    /// e.g. `Filter 1: ON PK Fc 28 Hz Gain 6.2 dB Q 2.10`
+    /// or `Filter: ON LSC Fc 105 Hz Gain 5.5 dB Q 0.71`
+    /// or `Filter 2: ON PK Fc 1250.0 Gain -2.1 Q 1.4`
+    /// or `Filter 3: ON HP Fc 20 Hz Q 0.71`
+    /// or `Filter 4: ON PK Fc 1000 Hz Gain 3 dB BW Oct 1.0`
+    static func parseFilterLine(from line: String, colorIndex: Int = 0) -> EQFilter? {
+        // Must start with Filter (optional index)
+        guard
+            line.range(
+                of: #"^Filter(?:\s*\d+)?\s*:"#, options: [.regularExpression, .caseInsensitive])
+                != nil
+        else {
+            return nil
+        }
+
+        let isEnabled: Bool
+        if line.range(of: #":\s*OFF\b"#, options: [.regularExpression, .caseInsensitive]) != nil {
+            isEnabled = false
+        } else {
+            isEnabled = true
+        }
+
+        // Determine filter kind
+        let kind: EQFilter.Kind
+        if line.range(of: #"\b(?:PK|PEQ|BELL)\b"#, options: [.regularExpression, .caseInsensitive])
+            != nil
+        {
+            kind = .bell
+        } else if line.range(
+            of: #"\b(?:LSC|LS|LOWSHELF)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+        {
+            kind = .lowShelf
+        } else if line.range(
+            of: #"\b(?:HSC|HS|HIGHSHELF)\b"#, options: [.regularExpression, .caseInsensitive])
+            != nil
+        {
+            kind = .highShelf
+        } else if line.range(
+            of: #"\b(?:HP|HPQ|HIGHPASS)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+        {
+            kind = .highPass
+        } else if line.range(
+            of: #"\b(?:LP|LPQ|LOWPASS)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+        {
+            kind = .lowPass
+        } else {
+            // Unrecognized filter kind — reject line
+            return nil
+        }
+
+        // Extract Frequency (Fc ...)
+        guard let frequency = extractNumber(pattern: #"\bFc\s+([0-9]+(?:\.[0-9]+)?)"#, from: line)
+        else {
+            return nil
+        }
+
+        // Extract Gain (Gain ... dB), defaults to 0 for high/low pass
+        let gain =
+            extractNumber(pattern: #"\bGain\s+([+-]?[0-9]+(?:\.[0-9]+)?)"#, from: line) ?? 0.0
+
+        // Extract Q factor or Bandwidth (BW Oct ...)
+        let q: Double
+        if let directQ = extractNumber(pattern: #"\bQ\s+([0-9]+(?:\.[0-9]+)?)"#, from: line) {
+            q = directQ
+        } else if let bw = extractNumber(
+            pattern: #"\bBW(?:\s+Oct)?\s+([0-9]+(?:\.[0-9]+)?)"#, from: line), bw > 0
+        {
+            // Convert bandwidth in octaves (N) to Q: Q = sqrt(2^N) / (2^N - 1)
+            let pow2N = pow(2.0, bw)
+            if pow2N != 1.0 {
+                q = sqrt(pow2N) / (pow2N - 1.0)
+            } else {
+                q = BuiltInProfiles.defaultQ
+            }
+        } else {
+            q =
+                (kind == .lowShelf || kind == .highShelf)
+                ? BuiltInProfiles.shelfQ : BuiltInProfiles.defaultQ
+        }
+
+        // Unclamped: `parse` counts what is out of range before
+        // `FilterChain.normalized` brings it in.
+        return EQFilter(
+            kind: kind,
+            frequency: frequency,
+            gain: gain,
+            q: q,
+            isEnabled: isEnabled,
+            band: nil,
+            colorIndex: colorIndex
+        )
+    }
+
+    private static func extractNumber(pattern: String, from string: String) -> Double? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+            let match = regex.firstMatch(
+                in: string, range: NSRange(string.startIndex..., in: string)),
+            let range = Range(match.range(at: 1), in: string)
+        else {
+            return nil
+        }
+        return Double(string[range])
+    }
+}

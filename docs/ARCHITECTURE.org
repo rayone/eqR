@@ -1,0 +1,417 @@
+#+TITLE: eqR Architecture
+#+SUBTITLE: One filter chain, two editors, three depths of access
+#+DATE: <2026-08-06 Thu>
+#+OPTIONS: toc:3 num:nil
+
+This began as a proposal and is now what eqR does, as of 1.6. It is kept as
+the record of *why* the equalizer is shaped this way; the file layout and the
+build are in [[file:DEVELOPMENT.org][DEVELOPMENT.org]], and the audio path and
+the rest of the implementation in [[file:INTERNALS.org][INTERNALS.org]].
+
+* Goal
+
+eqR needs parametric editing — arbitrary centre frequency and bandwidth is
+the single most requested change from users, and headphone correction and
+AutoEQ import are unimplementable without it. It also needs to
+stay an application a person opens to make their music sound better, not an
+audio workstation.
+
+Those two goals only conflict if parametric editing is treated as a second
+equalizer that has to coexist with the first. This proposal removes the
+conflict by not having a second equalizer.
+
+* The model
+
+There is one equalizer: a chain of biquad filters.
+
+Eleven of those filters have their frequency and Q locked to the ISO octave
+ladder. Those are the sliders. Any other filter in the chain is free — the user
+chooses its type, frequency, gain, and Q.
+
+Both kinds are the same object, processed by the same engine, drawn on the same
+graph. "Graphic" and "parametric" are not two equalizers, two modes, or two
+layers. They are two ways of reaching filters in one chain.
+
+** Filter
+
+#+begin_src text
+Filter
+{
+    Type          bell | low shelf | high shelf | high pass | low pass
+    Frequency
+    Gain
+    Q
+    Enabled
+    Band          ladder slot index, or none
+}
+#+end_src
+
+=Band= is what makes a filter a slider. A filter with a slot index is drawn in
+the slider strip; its frequency comes from =BuiltInProfiles.frequencies= at
+that index and its Q from =BuiltInProfiles.defaultQ=, and neither is editable.
+A filter without one is drawn in the filter list and on the graph as a free
+node.
+
+The slot index — not the frequency — is the identity of a band, so the slider
+strip has a stable mapping into a variable-length array.
+
+** Preset
+
+#+begin_src text
+Preset
+{
+    Name
+    Filters
+    Preamp
+}
+#+end_src
+
+That is the whole preset. A built-in preset is a parametric curve (from
+equalizerapoguide.com's tested Equalizer APO settings) loaded as free filters
+with the graphic ladder sitting flat at 0 dB, leaving the Graphic sliders free
+for user adjustments. Each preset specifies a fixed preamp chosen to keep peaks
+below full scale across the spectrum.
+=Flat= is eleven band filters at 0 dB, which is to say
+nothing at all — a 0 dB filter is already identity in =Biquad= and costs no
+processing.
+
+Identity stays the name, as today. There is no UUID — nothing in this proposal
+needs preset identity to change, and changing it would cost a migration for no
+benefit.
+
+* DSP pipeline
+
+#+begin_src text
+Preset filters
+      │
+      ▼
+  enabled, non-identity
+      │
+      ▼
+  flat [Filter] array
+      │
+      ▼
+   EQProcessor
+      │
+      ├──▶ Frequency response
+      │
+      ▼
+  Audio output
+#+end_src
+
+One flattening step, in one place, producing one array. =EQProcessor= receives
+it exactly the way it receives bands today and has no knowledge of slots,
+sliders, or lists. Filters are cascaded, so their magnitudes multiply and their
+dB contributions add exactly. The response curve is arithmetic, not an
+approximation, and filter order has no effect on either magnitude or phase.
+
+The chain is minimum phase. This is the expected and correct choice for a
+system equalizer; linear-phase processing is a separate mode and out of scope
+here.
+
+* Three depths of access
+
+The same chain is reachable at three levels. Most users only ever use the
+first.
+
+** Menu bar
+
+Master switch, preset list, response preview, bass/mid/treble, output device.
+Unchanged. Filters never appear here — this is the surface for someone who
+wants their music to sound better and nothing else.
+
+** Window
+
+Preset menu, response graph, eleven sliders, output device. Unchanged from
+today. This is what opens, and it is what a user who knows the Apple Music or
+Spotify equalizer already knows how to operate.
+
+** Filters
+
+A =Graphic= / =Parametric= tab pair on the editing area's border switches the
+editing area below the graph. The tab changes the controls and nothing else — same
+preset, same chain, same curve, same audio — and the editing area is a fixed
+height so nothing above it moves when you switch.
+
+#+begin_src text
+ [ Graphic | Parametric ]        [ Output ▾ ]        Classical   Revert   ⏻
+
+ Parametric Bands — 2 bands                                        ⏻
+   #  Enable  Type          Frequency     Gain         Q       Actions
+   ●1   ( )   Bell      ▾   ◔ 180 Hz    ◔ −3.0 dB    ◔ 1.20        🗑
+   ●2   ( )   High Shelf ▾  ◔ 8000 Hz   ◔ −2.0 dB    ◔ 0.70        🗑
+ + Add Band
+
+ Preamp ──▪── +2.0 dB
+#+end_src
+
+That is the first sketch. As shipped, the tabs sit on the editing area's own
+border, where they double as its title, and the preamp is a vertical column
+beside the editor.
+
+The Graphic tab is the default and is what a user who knows the Apple Music or
+Spotify equalizer already knows how to operate. Each parametric band has its
+own switch; the graphic bands have none, because a band at 0 dB already does
+nothing.
+
+A band is a row in a table, because six parameters across several bands is a
+grid of values and a grid is read down a column. Each parameter has both a knob
+and a number: the knob is how a value is found while listening — dragged,
+scrolled, or nudged — and the number is how a value already known is entered.
+Each band also carries a colour it can be given, which its knobs and its node on
+the graph both take, so the row and the point are visibly the same band. The
+colour is never the only marker; every band carries its number too.
+
+Choosing the Parametric tab is opting in, so the controls there use the
+standard vocabulary — Bell, Low Shelf, High Shelf, High Pass, Low Pass, and
+Q labelled Q. Renaming Q to something friendlier helps nobody: the casual user
+still does not want it, and the knowledgeable user then has to guess whether it
+means Q, bandwidth, or octaves. The deep end is hidden well rather than made
+shallow.
+
+Notch and band-pass are deliberately omitted. Every filter type is a
+coefficient formula that has to be mirrored exactly between the audio path and
+the plot, and neither type earns that cost in a listening application.
+
+* The graph
+
+The graph always shows the complete response of the chain — the sum of every
+enabled filter, band and free alike. That curve is what reaches the speakers.
+
+** Two kinds of point
+
+Band handles sit at the eleven ladder positions and move vertically only. Free
+filter nodes move in both axes — horizontally for frequency, vertically for
+gain. Q is set in the list rather than by dragging the graph: the graph is where
+a filter is placed by feel, the list is where every one of its parameters can be
+reached, and one of the two has to be the precise one.
+
+The constraint is the explanation: a band handle physically cannot be dragged
+sideways, so the difference between a locked band and a free filter is learned
+from the mouse rather than from a label. They should look different as well —
+band handles small and on the ladder positions, filter nodes larger and ringed.
+
+Touching a point shows the editor it belongs to. Clicking or dragging a filter
+node shows the Parametric tab with its row selected; a band handle shows the
+Graphic tab. That is the other half of the explanation: the first time anyone
+grabs a point, the window answers where its settings live. Hovering never
+switches — sweeping the pointer across the plot would flip the tabs — and
+neither does a reset, which undoes rather than edits.
+
+** Creating filters from the graph
+
+While the Graphic tab is showing, the graph behaves exactly as it does today and
+a filter cannot be created by accident. While the Parametric tab is showing,
+double-clicking empty graph space creates a bell at that frequency and gain and
+adds it to the list.
+
+** Double-click
+
+Double-click keeps its existing meaning — reset this point's gain to 0 dB — for
+both kinds of point. Most parametric editors delete a node on double-click;
+consistency inside eqR is worth more than matching that convention, and an
+accidental reset is recoverable in a way an accidental delete is not. Delete
+lives in the node's context menu and in the list row.
+
+* Rules that keep it predictable
+
+These are the guarantees the design exists to provide.
+
+1. A slider shows the gain of its own filter, and nothing else. It never moves
+   on its own.
+2. The graph shows the sum of the whole chain. It is exact.
+3. Where those two differ, the graph is where the difference is visible: the
+   curve rides above a handle that some other filter is reaching.
+4. A preset sets the entire chain, including its output trim.
+5. Nothing is ever fitted, estimated, or redistributed.
+
+** Own value, not the total
+
+A slider that reported the total instead of its own value would be a control
+that lies. Adding a free filter near 125 Hz would slide the 125 Hz slider by
+itself; a high pass below it would make the top of the slider's own scale
+unreachable; and dragging the slider would require solving for the gain that
+produces a requested total, which is exactly the kind of inverse problem this
+design exists to avoid.
+
+The same reasoning puts a band's handle on the graph at the band's own gain
+rather than on the summed curve: moving one filter must never move another's
+handle.
+
+A second number showing the chain total alongside the band's own was tried and
+removed. Two dB values on one small floating label read as a single value
+someone had failed to round, and the information was already on screen in the
+form that needs no explaining: the curve rides above the handle exactly where
+something else is reaching that frequency. Pointing at a handle shows one
+number — what that band is set to — and the curve above it shows what is
+actually being heard.
+
+* Crossing over
+
+A band is a filter with two parameters locked. Unlocking is therefore not a
+conversion but a change of one field: clear the slot index, and the filter
+leaves the slider strip for the list with its kind, frequency, gain, and Q
+intact. Its slot stays in the strip at 0 dB — identity — so the ladder keeps
+its eleven sliders and the chain sums to exactly what it did before. The
+coefficients are unchanged, so the sound is identical across the operation.
+
+This is offered as *Edit as filter* in a slider's context menu, and it is the
+direct answer to the most requested feature — "I like what 125 Hz is doing, but
+I want it narrower."
+
+The reverse is not offered. Collapsing free filters back onto eleven fixed
+slots is a curve fit: an optimizer, a residual, and a result that only
+approximates what the user had. Moving one filter between presentations is
+exact; fitting many filters into a fixed ladder is not, and only the exact
+operation belongs in this application.
+
+* Presets
+
+A preset is the complete sound. Selecting one replaces the whole chain,
+including any free filters, and =Flat= carries none. =Flat= is
+therefore flat.
+
+The alternative — presets that set only the eleven bands and leave free filters
+in place — makes every preset name a lie for as long as any filter exists. That
+trades a one-time confirmation prompt for permanent untrustworthiness.
+
+Switching away from an edited chain uses the existing unsaved-changes path:
+=ProfileManager.isModified= already covers slider edits and extends to filters
+without change. Saving a user preset captures the whole chain.
+
+* Why not layers or modes
+
+An earlier draft of this document proposed a Graphic Layer and a Parametric
+Layer edited through separate modes. Both ideas are dropped.
+
+*Modes.* An earlier revision put both editors on one screen, with the filter
+list in a collapsed section under the sliders, on the grounds that a mode is a
+thing the user has to keep track of. That lost to the practical objection: the
+two editors plus the graph plus the output row did not fit a window that also
+had to stay smaller than a laptop screen. Tabs are the compromise, and the cost
+is contained by the rule above — a tab switches the controls and nothing else,
+so there is no state to keep track of beyond which tool is in your hand.
+
+*Layers.* Two arrays summed by the engine is a correct model, but the summing
+is the only thing it adds — and a single array already sums. The layer split
+also forces a wholesale ban on moving filters between layers, which throws away
+the exact, useful case described above along with the lossy one.
+
+*Conversion between two equalizers.* Rejected for the reason the earlier draft
+gave, and it remains the right rejection. Fitting a free filter set onto a fixed
+ladder is an approximation, and approximations are what this application is
+trying not to make.
+
+* What it cost the code
+
+The engine was nearly unaffected, which is the strongest evidence the model was
+right. As built:
+
+- =EQBand= became =EQFilter=: it adds a kind, an enabled flag, a colour, and a
+  ladder slot. The slot — not the frequency — is a band's identity, so a fixed
+  strip of eleven sliders indexes into a variable-length chain.
+- =PeakingFilter= became =Biquad=, typed by kind. Its defining property
+  survived: one coefficient implementation, used by both =EQProcessor= and
+  =FrequencyResponseView=. That is what makes the drawn curve a truthful
+  picture of the audio path, and every new filter kind is a new opportunity to
+  break it.
+- =EQProfile= holds a chain instead of a band array. Presets written by 1.x
+  decode into eleven band filters through a decoder default, so no one lost a
+  preset to the change.
+- =EQProcessor.maxFilters= is 32 — eleven slots, a cap of sixteen added bands,
+  and room for automatic processing later. Each filter is one more pass over
+  the buffer in =processChannel=, so the cap is a budget rather than a
+  formality.
+- =EqualizerDetailView= gained the tab pair and a fixed-height editing area.
+- =FrequencyResponseView= gained free nodes alongside the band handles, and
+  two-axis dragging for them.
+- =QuickTone= was unaffected: it offsets band gains by slot, and slots still
+  exist.
+
+* Global gain
+
+=EQProfile.preamp= is an output trim in dB, applied after the whole chain by
+=EQProcessor= and smoothed on the same path as the band gains. It belongs to the
+preset because it is a property of the sound the preset describes, and it is
+saved and restored with it.
+
+Two filters can boost the same frequency and the chain cannot know how much
+headroom the source had, so a boosted preset can ask for more than there is.
+This is where it is given back. The response curve includes it — the curve is
+what you hear — and so does the total under each slider.
+
+The control sits on the bottom row with the output device and volume, not in a
+column beside the editor. A column of its own would narrow the band sliders
+without narrowing the plot above them, and each slider sitting directly under
+its own point on the curve is what the window is built on. On the bottom row it
+costs width from neither, and it stays visible in both tabs.
+
+Automatic trim from the computed peak is not implemented; the control is manual.
+
+* Per-device state
+
+macOS keeps a volume per output device: switch to headphones and you get the
+level you last set for headphones. Equalization has the same shape, and more
+strongly — the curve that suits headphones is not the one that suits laptop
+speakers, which is most of why anyone runs an equalizer at all.
+
+So =DeviceEQState= — the preset in effect, any unsaved edits to it, the output
+trim, and the Quick EQ tone positions — is stored per device, keyed by the
+device's persistent UID rather than its =AudioDeviceID=, which is reassigned
+every boot.
+
+The preset *library* is deliberately not per device. Presets are a shared
+collection; only which one is playing, and what has been changed about it,
+follows the hardware. A rename therefore has to follow every device that had
+that preset selected, or the others fall back to =Flat= the next time they are
+used.
+
+A device never seen before starts at the default preset, exactly as a device
+never seen before starts at a default volume. Inheriting whatever happened to be
+playing would make the first switch stick in a way the user never asked for.
+
+=AudioDeviceList= is owned by the app delegate rather than by the window, so the
+equalizer follows the hardware whether or not anything is on screen — eqR
+spends most of its life as a menu bar icon.
+
+* Output device
+
+The header names the device the equalized signal is going to, and lets it be
+changed. This is status before it is a control: eqR taps the system output
+and re-renders it through whatever the default device is, so which device is
+active changes what the application is doing. It is also the one piece of system
+state genuinely related to the sound being shaped — the curve that suits
+headphones is not the one that suits laptop speakers.
+
+Output *volume* is deliberately absent. macOS offers it in Control Center, the
+menu bar, and the volume keys, and a slider that belongs to the system sitting
+beside the preamp — which belongs to the preset — made two gain controls with
+different owners and different lifetimes look alike.
+
+* Deferred
+
+Out of scope here, but the shape above should not have to change to accept
+them.
+
+- *Ladder Q.* At Q 1.41 and octave spacing, eleven equal slider settings do not
+  produce a flat curve — the response peaks at the centres and sags between
+  them. Because eqR draws the true response rather than a decorative spline,
+  that ripple is visible on screen. It is the one detail that undercuts the
+  claim that nothing here is approximate, and it is the first thing a
+  knowledgeable user tests.
+- *Automatic processing.* Headphone correction, AutoEQ import, room correction.
+  These arrive as filters with a flag marking them as machine-generated, which
+  the model above already accommodates. Their value to a casual user is that
+  presets become better, not that anyone edits a filter table.
+- *Linear phase.* A second processing mode, not a change to this model.
+
+* Summary
+
+One chain of filters. Eleven of them locked to the ISO ladder and drawn as
+sliders; the rest free and drawn as a list. One graph showing the exact sum.
+Three depths of access, with the shallowest unchanged from today.
+
+A casual user sees the equalizer they already know. A knowledgeable user opens
+one section and finds a filter chain with honest numbers and a truthful curve.
+Neither is asked to think about layers, modes, or conversion, because there
+are none.

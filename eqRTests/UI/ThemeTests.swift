@@ -1,0 +1,263 @@
+import AppKit
+import SwiftUI
+import Testing
+
+/// The layout arithmetic that has no runtime check.
+///
+/// The parametric table is built from fixed column widths, and the window can
+/// be dragged down to `contentMinSize`. Nothing at runtime complains when those
+/// two facts stop being compatible — the columns simply clip, on the narrowest
+/// window, which is where it is least likely to be noticed.
+@Suite(.serialized)
+struct ThemeTests {
+    /// The width the editor block actually has when the window is at its
+    /// smallest, derived the way the window derives it.
+    private var editorBlockWidth: CGFloat {
+        let windowMinimum: CGFloat = 960  // AppDelegate.contentMinSize
+        let sidebar: CGFloat = 216  // NSSplitViewItem.minimumThickness
+        let content = windowMinimum - sidebar - Theme.Spacing.window * 2
+        let editor = content - Theme.globalGainWidth - Theme.Spacing.inner
+        return editor - Theme.blockPadding * 2
+    }
+
+    @Test func theParametricTableFitsTheNarrowestWindow() {
+        let columns = [
+            Theme.FilterRow.Column.index,
+            Theme.FilterRow.Column.enable,
+            Theme.FilterRow.Column.type,
+            Theme.FilterRow.Column.frequency,
+            Theme.FilterRow.Column.gain,
+            Theme.FilterRow.Column.q,
+            Theme.FilterRow.Column.actions,
+        ]
+        let gaps = Theme.FilterRow.columnSpacing * CGFloat(columns.count - 1)
+        let rowPadding: CGFloat = 8 * 2  // FilterRowView's horizontal inset
+        let needed = columns.reduce(0, +) + gaps + rowPadding
+
+        #expect(
+            needed <= editorBlockWidth,
+            "the band row needs \(needed) pt and the block has \(editorBlockWidth) pt at the window's minimum width"
+        )
+    }
+
+    /// The longest frequency gets at least the room the longest gain does.
+    ///
+    /// Relative rather than absolute because the field's own insets are the
+    /// text field's, not ours, and the gain column is the one known to show
+    /// its widest value whole. At 94 the frequency column did not: an imported
+    /// "3302.8" was drawn as "3302." with the last digit under "Hz".
+    @Test func theLongestFrequencyFitsItsField() {
+        let value = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        let unit = NSFont.systemFont(ofSize: 11)
+        func width(_ text: String, _ font: NSFont) -> CGFloat {
+            (text as NSString).size(withAttributes: [.font: font]).width
+        }
+        // Both fields are a knob, a value, and a unit in the same layout, so the
+        // room each leaves is its column less the value and the unit.
+        let frequencyRoom =
+            Theme.FilterRow.Column.frequency - width("19999.9", value) - width("Hz", unit)
+        let gainRoom = Theme.FilterRow.Column.gain - width("+12.0", value) - width("dB", unit)
+
+        #expect(
+            frequencyRoom >= gainRoom,
+            "the frequency field leaves \(frequencyRoom) pt around \"19999.9 Hz\"; the gain field leaves \(gainRoom) pt"
+        )
+    }
+
+    /// The band number has to fit beside its colour swatch on one line.
+    ///
+    /// This is measured, not asserted from a comment, because the failure was
+    /// silent and off by half a point: the column held a swatch and one digit
+    /// exactly, so bands 1–9 looked right and band 10 wrapped. The row is a
+    /// fixed height, so a wrap is not a cramped label — it is a broken row.
+    @Test func aBandNumberFitsItsColumn() {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+        // The widest number the list can reach: filters are capped, and every
+        // digit is the same width in a monospaced-digit face.
+        let widest = String(repeating: "0", count: String(BuiltInProfiles.maxFreeFilters).count)
+        let text = (widest as NSString).size(withAttributes: [.font: font]).width
+
+        let available =
+            Theme.FilterRow.Column.index
+            - Theme.FilterRow.Column.indexSwatch
+            - Theme.FilterRow.Column.indexGap
+
+        #expect(
+            available >= text,
+            "band \(BuiltInProfiles.maxFreeFilters) needs \(text) pt and the column leaves \(available) pt"
+        )
+    }
+
+    /// A row, its hairline, and its knob have sizes that make sense together:
+    /// a knob taller than its row would be clipped by it.
+    @Test func aRowHasAPositivePitch() {
+        #expect(Theme.FilterRow.height > 0)
+        #expect(Theme.FilterRow.height + Theme.FilterRow.separator > Theme.FilterRow.height)
+        #expect(Theme.FilterRow.knobDiameter > 0)
+        #expect(
+            Theme.FilterRow.knobDiameter < Theme.FilterRow.height,
+            "a knob taller than its row would be clipped by it")
+    }
+
+    /// The editing area is a fixed height so switching tabs moves nothing. It
+    /// has to hold the column titles, at least one band, and the Add Band row.
+    ///
+    /// The blocks' own headings are gone — each block wears its title on its
+    /// border now — so the only chrome inside is the padding and the table's
+    /// column titles.
+    @Test func theEditorIsTallEnoughForTheTableItHolds() {
+        let chrome = Theme.blockPadding * 2 + Theme.FilterRow.headerHeight
+        let addRow: CGFloat = 8 + 20
+        #expect(
+            Theme.editorHeight - chrome - addRow > Theme.FilterRow.height,
+            "the editing area cannot show a single band row")
+    }
+
+    /// The band strip and the Preamp column are laid out from the same numbers
+    /// so their tracks start and end level. If the chrome ever exceeds the
+    /// height, the track gets a negative size.
+    @Test func theBandColumnLeavesRoomForItsTrack() {
+        #expect(Theme.BandRow.minSliderHeight > Theme.BandRow.chromeHeight)
+        #expect(Theme.BandRow.minSliderHeight > Theme.BandRow.knobDiameter)
+        #expect(Theme.BandRow.columnWidth > Theme.BandRow.trackWidth)
+    }
+
+    // MARK: - The signal colour
+
+    /// The response curve has to stay legible on both window appearances, and
+    /// stay distinct from the accent the user picked.
+    ///
+    /// A dynamic colour is easy to get wrong in a way nothing catches: mismatch
+    /// the appearance test and both branches return the same value, which looks
+    /// fine on whichever appearance you happened to be running.
+    @Test func theSignalColourIsLegibleOnBothAppearances() throws {
+        let dark = try resolve(Theme.signal, in: .darkAqua)
+        let light = try resolve(Theme.signal, in: .aqua)
+
+        #expect(
+            dark != light,
+            "one value is being returned for both appearances — the dynamic provider is not branching"
+        )
+
+        // 3:1 is what WCAG asks of a graphical object, and the curve is a 1.5 pt
+        // line: the one element in the window that has to be followed by eye.
+        let onDark = contrast(
+            dark, try resolve(Color(nsColor: .windowBackgroundColor), in: .darkAqua))
+        let onLight = contrast(
+            light, try resolve(Color(nsColor: .windowBackgroundColor), in: .aqua))
+        #expect(onDark > 3.0, "the curve is hard to see on the dark window (\(onDark):1)")
+        #expect(onLight > 3.0, "the curve is hard to see on the light window (\(onLight):1)")
+    }
+
+    /// The whole point of the change: data and controls must never be the same
+    /// colour, whatever accent the user has chosen.
+    @Test func theSignalColourIsNotAnAccentColour() throws {
+        let signal = try resolve(Theme.signal, in: .darkAqua)
+        for accent in [
+            NSColor.systemGreen, .systemBlue, .systemPurple, .systemPink,
+            .systemRed, .systemOrange, .systemYellow, .systemGray,
+        ] {
+            let resolved = try resolve(Color(nsColor: accent), in: .darkAqua)
+            #expect(
+                distance(signal, resolved) > 0.12,
+                "the curve is too close to the \(accent) accent to be told apart from a control")
+        }
+    }
+
+    // MARK: - The TokyoNight theme
+
+    /// TokyoNight paints the window's surfaces with fixed dark values; the text
+    /// hierarchies, the controls and `Theme.signal` resolve against whatever
+    /// appearance the window is drawn in. With the system in Light mode that
+    /// put dark text on the dark canvas — the theme read as a black window with
+    /// nothing legible in it, which is how it was reported as invisible. The
+    /// fix is the application resolving in `darkAqua` while the theme is on,
+    /// which is what the palette's values were measured against. This holds
+    /// the two halves of that contract: the appearance `applyAppearance()`
+    /// forces is dark while TokyoNight is active and unlocked (nil = system)
+    /// otherwise, and every fixed palette value stays legible against what the
+    /// text hierarchies resolve to in that same appearance.
+    @MainActor
+    @Test func theTokyoNightWindowResolvesDarkAndThePaletteStaysLegible() throws {
+        _ = NSApplication.shared
+        let defaults = UserDefaults.standard
+        let previous = defaults.string(forKey: Theme.themeModeKey)
+
+        // Applying with the theme selected forces the dark appearance.
+        defaults.set("TokyoNight", forKey: Theme.themeModeKey)
+        Theme.applyAppearance()
+        #expect(
+            NSApp.appearance?.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua,
+            "TokyoNight must resolve the window dark, or its palette sits against light-appearance chrome"
+        )
+
+        // TokyoNight's dark canvas against the text the app actually draws on
+        // it in that appearance: the same legibility bar the response curve is
+        // held to, since both are read against this surface.
+        let canvas = try resolve(Theme.TokyoNight.bg, in: .darkAqua)
+        for (name, sample) in [
+            ("primary text", Color(nsColor: .labelColor)),
+            ("secondary text", Color(nsColor: .secondaryLabelColor)),
+            ("the response curve", Theme.signal),
+        ] {
+            let ratio = contrast(try resolve(sample, in: .darkAqua), canvas)
+            #expect(ratio > 3.0, "\(name) is hard to see on the TokyoNight canvas (\(ratio):1)")
+        }
+
+        // Applying with the theme off hands the choice back to the system.
+        defaults.set("System", forKey: Theme.themeModeKey)
+        Theme.applyAppearance()
+        #expect(
+            NSApp.appearance == nil,
+            "System theme must not keep the forced appearance")
+
+        defaults.removeObject(forKey: Theme.themeModeKey)
+        Theme.applyAppearance()
+        #expect(
+            NSApp.appearance?.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua,
+            "a missing setting must fall back to TokyoNight, the default theme")
+
+        if let previous {
+            defaults.set(previous, forKey: Theme.themeModeKey)
+        } else {
+            defaults.removeObject(forKey: Theme.themeModeKey)
+        }
+        Theme.applyAppearance()
+        NSApp.appearance = nil
+    }
+
+    // MARK: - Colour helpers
+
+    private func resolve(_ color: Color, in appearance: NSAppearance.Name) throws -> NSColor {
+        let appearance = try #require(NSAppearance(named: appearance))
+        var resolved: NSColor?
+        appearance.performAsCurrentDrawingAppearance {
+            resolved = NSColor(color).usingColorSpace(.sRGB)
+        }
+        return try #require(resolved)
+    }
+
+    private func luminance(_ color: NSColor) -> Double {
+        func channel(_ value: CGFloat) -> Double {
+            let v = Double(value)
+            return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(color.redComponent)
+            + 0.7152 * channel(color.greenComponent)
+            + 0.0722 * channel(color.blueComponent)
+    }
+
+    private func contrast(_ a: NSColor, _ b: NSColor) -> Double {
+        let (x, y) = (luminance(a), luminance(b))
+        return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+    }
+
+    /// Straight-line distance in sRGB. Crude as colour science, adequate as a
+    /// tripwire for "these two are the same colour".
+    private func distance(_ a: NSColor, _ b: NSColor) -> Double {
+        let dr = Double(a.redComponent - b.redComponent)
+        let dg = Double(a.greenComponent - b.greenComponent)
+        let db = Double(a.blueComponent - b.blueComponent)
+        return (dr * dr + dg * dg + db * db).squareRoot()
+    }
+}

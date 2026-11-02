@@ -1,0 +1,732 @@
+import SwiftUI
+
+/// Composite frequency response of the whole filter chain, drawn on a
+/// frequency / dB grid. The x-axis is band-aligned: each ladder band's centre
+/// sits exactly above its slider column in the main window, with logarithmic
+/// interpolation between bands. Free filters sit wherever their frequency puts
+/// them and never move the grid.
+///
+/// The magnitude math comes from `Biquad`, the same type `EQProcessor` renders
+/// with, so the curve shows what the audio path actually does at the engine's
+/// sample rate (for example, the 20 kHz band flattens out when the output
+/// device runs at 44.1 kHz).
+///
+/// Two kinds of point sit on the plot, and the difference between them is
+/// enforced by the drag rather than explained by a label:
+///
+/// - *Band handles* are locked to the ladder, so they move vertically only.
+/// - *Filter nodes* are free, so they move in both axes.
+///
+/// Clicking a filter node selects it, which is the same selection the
+/// parametric table's rows carry: one band, pointed at from either side.
+///
+/// Double-click resets a point's gain to 0 dB. With `allowsFilterCreation` set —
+/// which the main window ties to the Parametric tab showing — double-clicking
+/// empty space creates a filter there instead, so a user who never opens that
+/// tab can never make one by accident.
+struct FrequencyResponseView: View {
+    /// The whole chain: ladder filters and free filters together.
+    let filters: [EQFilter]
+    let sampleRate: Double
+
+    /// Output trim in dB, applied after the chain. The curve is what you hear,
+    /// so it moves with the trim just as the audio does.
+    var preamp: Double = 0
+
+    /// The analyzer whose output is drawn behind the grid and curve, or nil for
+    /// no backdrop. Deliberately the object rather than its points: it is
+    /// observed by `SpectrumBackdrop` alone, so its sixty-a-second updates
+    /// invalidate that layer and leave this view untouched.
+    var spectrum: SpectrumAnalyzer?
+    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
+
+    /// The filter whose node is drawn as chosen, and whose row is highlighted in
+    /// the parametric table. One selection, shown in both places.
+    var selectedFilterID: UUID?
+
+    /// The band the pointer is on down in the slider strip, and the one being
+    /// dragged there.
+    ///
+    /// A slider and a handle on this curve are two grips on the same band, so
+    /// moving either one is answered here: the handle lights up, and while the
+    /// band is actually moving its value is drawn beside it — in the one place
+    /// that can show what the change did to the sound.
+    var stripHoveredBand: Int?
+    var stripDraggedBand: Int?
+
+    var onBandGainChange: ((_ slot: Int, _ gain: Double) -> Void)?
+    var onBandReset: ((_ slot: Int) -> Void)?
+    var onFilterMove: ((_ id: UUID, _ frequency: Double, _ gain: Double) -> Void)?
+    var onFilterReset: ((_ id: UUID) -> Void)?
+    var onFilterCreate: ((_ frequency: Double, _ gain: Double) -> Void)?
+    /// A click landed on a filter node, or on nothing. Nil clears the
+    /// selection, so clicking the empty plot puts the table back to no row
+    /// chosen rather than leaving a stale one behind.
+    var onFilterSelect: ((_ id: UUID?) -> Void)?
+    /// A click landed on a band handle. The selection is still cleared — the
+    /// ladder has no row in the table — but the window shows the strip that
+    /// band belongs to.
+    var onBandSelect: ((_ slot: Int) -> Void)?
+
+    /// Whether double-clicking empty space creates a filter. Off unless the
+    /// Parametric tab is showing.
+    var allowsFilterCreation = false
+
+    /// Compact, read-only presentation for the menu-bar Quick EQ: no grid,
+    /// labels, handles, or interaction — just the smooth curve, resembling
+    /// Apple's EQ preview. Defaults to the full interactive plot.
+    var minimal = false
+
+    /// Compact read-only presentation for previews that still need the same
+    /// frequency and gain context as the main graph. The full graph labels
+    /// every band; compact mode keeps five evenly spaced anchors.
+    ///
+    /// Read-only means no grips: the band markers and numbered filter nodes are
+    /// for dragging, and in a picture that cannot be edited they only crowd it —
+    /// and, sitting at each filter's own gain rather than on the curve, they
+    /// read as points the curve misses. Only the curve and its axes are drawn.
+    var compact = false
+
+    /// The ratio used by the catalog preview. It follows the main graph's
+    /// readable shape without letting the small catalog card become a tall
+    /// editor panel.
+    static let compactAspectRatio: CGFloat = 3
+
+    /// Leaves breathing room around the compact graph instead of stretching
+    /// it edge to edge across the configuration card.
+    static let compactWidthFraction: CGFloat = 0.75
+
+    /// A concrete height is needed when the compact graph is placed in a
+    /// VStack: GeometryReader otherwise has no intrinsic height to contribute.
+    static let compactPreviewHeight: CGFloat = 142
+
+    /// Draws the plot's own rounded backdrop. Turned off in the main window,
+    /// where the enclosing section card already supplies the surface.
+    var showsBackground = true
+
+    /// A grabbable point on the plot. Bands are addressed by ladder slot and
+    /// free filters by identity, so neither can be confused for the other when
+    /// the chain changes under a drag.
+    private enum Handle: Equatable {
+        case band(Int)
+        case filter(UUID)
+    }
+
+    @State private var dragGainLimit: Double?
+    @State private var dragged: Handle?
+    @State private var hovered: Handle?
+
+    /// The point being moved, from either grip.
+    private var activeDrag: Handle? {
+        dragged ?? stripDraggedBand.map(Handle.band)
+    }
+
+    /// The point being pointed at, from either grip.
+    private var activeHover: Handle? {
+        hovered ?? stripHoveredBand.map(Handle.band)
+    }
+
+    /// The plot's vertical range, in dB.
+    ///
+    /// Chosen from the resting axis — compact for ordinary presets, widened once
+    /// a filter actually sits beyond the graphic range — and then held constant
+    /// for the whole of a drag, so the scale never changes under the pointer.
+    /// Because it is fixed for the length of a drag, authoring a free filter past
+    /// ±12 dB is a two-step move: drag to the compact ceiling, release so the
+    /// widened axis takes over, then drag again into the full ±20 dB.
+    private var maxDB: Double {
+        dragGainLimit ?? ResponseGainAxis.limit(for: freeFilters)
+    }
+    private static let curvePointCount = 160
+    /// Grabbing distance, a little wider than the largest node so a click just
+    /// off one still lands on it.
+    private static let handleHitRadius: CGFloat = 16
+
+    /// Only the extremes and the reference are marked. The ±6 dB rules were
+    /// noise: the curve is read against 0 dB, and the frequency divisions
+    /// already carry the grid.
+    private var labeledDBs: [Double] { [maxDB - 2, 0, 2 - maxDB] }
+
+    /// Width reserved at the left for the dB labels, so they sit outside the
+    /// plot rather than over the curve. The main window insets its band sliders
+    /// by the same amount to keep the two aligned; the minimal menu-bar graph
+    /// has no labels and so no gutter.
+    private var axisGutter: CGFloat { minimal ? 0 : Theme.axisGutter }
+
+    /// The ladder filters, in slot order.
+    private var bands: [EQFilter] {
+        filters.filter(\.isBand).sorted { ($0.band ?? 0) < ($1.band ?? 0) }
+    }
+
+    private var freeFilters: [EQFilter] {
+        filters.filter { !$0.isBand }
+    }
+
+    /// Band centre frequencies, ascending — the anchors of the x-axis.
+    ///
+    /// The ladder itself rather than the chain's band filters, which are always
+    /// the same values: `FilterChain.normalized` guarantees one filter per
+    /// slot carrying that slot's frequency. Deriving it instead cost a `filter`
+    /// and a `sorted` *per call*, and this is called once per curve point, once
+    /// per spectrum point, and once per handle — several hundred times a frame,
+    /// sixty times a second.
+    ///
+    /// Deliberately the ladder alone: a free filter must never shift the grid or
+    /// the frequency labels, or adding one would move every other point on the
+    /// plot sideways.
+    private var anchors: [Double] { BuiltInProfiles.frequencies }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            if minimal {
+                Canvas { context, _ in
+                    drawBaseline(context, size)
+                    drawCurve(context, size)
+                }
+            } else {
+                ZStack {
+                    if let spectrum {
+                        SpectrumBackdrop(
+                            spectrum: spectrum,
+                            axis: axis(size),
+                            plotHeight: plotHeight(size)
+                        )
+                    }
+
+                    Canvas { context, _ in
+                        drawGrid(context, size)
+                        if !compact { drawHighlightedFilterCurve(context, size) }
+                        drawCurve(context, size)
+                        if !compact {
+                            drawBandMarkers(context, size)
+                            drawFilterNodes(context, size)
+                        }
+                    }
+                }
+                // Nothing to grab in a compact preview, so the pointer passes
+                // through: no hover highlight, no drag, no double-click.
+                .allowsHitTesting(!compact)
+                .gesture(dragGesture(size))
+                .simultaneousGesture(doubleClickGesture(size))
+                .simultaneousGesture(selectionGesture(size))
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let location):
+                        hovered = handle(near: location, size)
+                    case .ended:
+                        hovered = nil
+                    }
+                }
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.quaternary.opacity(showsBackground ? (minimal ? 0.35 : 0.5) : 0))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .accessibilityLabel("Frequency response")
+        .accessibilityHidden(minimal)
+    }
+
+    // MARK: - Interaction
+
+    private func dragGesture(_ size: CGSize) -> some Gesture {
+        // The 3 pt minimum distance keeps clicks (including the first click
+        // of a double-click) from grabbing a handle and jittering its gain.
+        DragGesture(minimumDistance: 3)
+            .onChanged { value in
+                guard let handle = dragged ?? handle(near: value.startLocation, size) else {
+                    return
+                }
+                if dragged == nil { dragGainLimit = maxDB }
+                dragged = handle
+                switch handle {
+                case .band(let slot):
+                    // Locked to the ladder: vertical only.
+                    onBandGainChange?(slot, snappedGain(atY: value.location.y, size))
+                case .filter(let id):
+                    guard let filter = freeFilters.first(where: { $0.id == id }) else { return }
+                    let frequency = frequency(atFraction: fraction(atX: value.location.x, size))
+                    // A high or low pass has no gain to drag, so it stays on the
+                    // 0 dB line and only its frequency follows the pointer.
+                    let gain =
+                        filter.kind.usesGain
+                        ? snappedGain(
+                            atY: value.location.y, size, range: BuiltInProfiles.filterGainRange)
+                        : filter.gain
+                    onFilterMove?(id, frequency, gain)
+                }
+            }
+            .onEnded { _ in
+                dragged = nil
+                dragGainLimit = nil
+            }
+    }
+
+    /// A plain click chooses the point it lands on, which is what puts the
+    /// matching row in the parametric table into selection — and, coming the
+    /// other way, a row chosen there is what draws this node as chosen. There
+    /// is one selection; these are two ways of pointing at it.
+    ///
+    /// A band handle clears it rather than selecting anything: the ladder's
+    /// eleven filters have no row in that table to select.
+    private func selectionGesture(_ size: CGSize) -> some Gesture {
+        SpatialTapGesture(count: 1)
+            .onEnded { value in
+                switch handle(near: value.location, size) {
+                case .filter(let id):
+                    onFilterSelect?(id)
+                case .band(let slot):
+                    onFilterSelect?(nil)
+                    onBandSelect?(slot)
+                case nil:
+                    onFilterSelect?(nil)
+                }
+            }
+    }
+
+    private func doubleClickGesture(_ size: CGSize) -> some Gesture {
+        SpatialTapGesture(count: 2)
+            .onEnded { value in
+                switch handle(near: value.location, size) {
+                case .band(let slot):
+                    onBandReset?(slot)
+                case .filter(let id):
+                    onFilterReset?(id)
+                case nil:
+                    guard allowsFilterCreation else { return }
+                    onFilterCreate?(
+                        frequency(atFraction: fraction(atX: value.location.x, size)),
+                        snappedGain(
+                            atY: value.location.y, size,
+                            range: BuiltInProfiles.filterGainRange)
+                    )
+                }
+            }
+    }
+
+    /// The point within grabbing distance of `location`, preferring the nearest.
+    /// Free filters are tested first: they are drawn on top, so they should be
+    /// grabbed first where the two overlap.
+    private func handle(near location: CGPoint, _ size: CGSize) -> Handle? {
+        var best: (handle: Handle, distance: CGFloat)?
+
+        func consider(_ handle: Handle, _ center: CGPoint, bias: CGFloat) {
+            let distance = hypot(location.x - center.x, location.y - center.y)
+            guard distance <= Self.handleHitRadius else { return }
+            if distance - bias < (best?.distance ?? .infinity) {
+                best = (handle, distance - bias)
+            }
+        }
+
+        // Built once: this runs on every pointer move, and the axis was
+        // previously rebuilt — array copy included — for all twenty-seven
+        // candidates.
+        let axis = axis(size)
+        for filter in freeFilters {
+            consider(
+                .filter(filter.id), filterNodeCenter(filter, axis, size),
+                bias: Self.handleHitRadius / 2)
+        }
+        for (slot, band) in bands.enumerated() {
+            consider(.band(slot), bandHandleCenter(band, axis, size), bias: 0)
+        }
+        return best?.handle
+    }
+
+    /// Gain for a point dragged to vertical position `y`, clamped to the slider
+    /// range and snapped to the 0.5 dB step used across the app, so the curve
+    /// and the numeric readouts always agree.
+    private func snappedGain(
+        atY y: CGFloat, _ size: CGSize, range: ClosedRange<Double> = BuiltInProfiles.gainRange
+    ) -> Double {
+        ResponseGainAxis(limit: maxDB, height: plotHeight(size), inset: verticalInset)
+            .gain(atY: y, range: range)
+    }
+
+    private func fraction(atX x: CGFloat, _ size: CGSize) -> Double {
+        Double(min(max((x - axisGutter) / plotWidth(size), 0), 1))
+    }
+
+    /// Where a band's handle sits: at the band's own gain.
+    ///
+    /// Deliberately *not* on the composite curve. The handle is the filter — its
+    /// height is the parameter being edited, so it matches the band's slider and
+    /// its readout exactly, and moving one filter never shifts another's handle.
+    /// Because the bands overlap by an octave the summed curve rides above the
+    /// handles, which `drawHighlightedFilterCurve` explains by drawing the
+    /// highlighted filter's own response underneath it.
+    private func bandHandleCenter(_ band: EQFilter, _ axis: ResponseAxis, _ size: CGSize) -> CGPoint
+    {
+        CGPoint(x: axis.x(band.frequency), y: yPosition(band.gain, size))
+    }
+
+    /// Same rule for a free filter, except that a high or low pass has no gain
+    /// and so rides the 0 dB line.
+    private func filterNodeCenter(
+        _ filter: EQFilter, _ axis: ResponseAxis, _ size: CGSize
+    ) -> CGPoint {
+        CGPoint(
+            x: axis.x(filter.frequency),
+            y: yPosition(filter.kind.usesGain ? filter.gain : 0, size)
+        )
+    }
+
+    // MARK: - Drawing
+
+    /// Single faint 0 dB reference line for the minimal presentation, so the
+    /// curve reads as a deviation from flat without a full grid.
+    private func drawBaseline(_ context: GraphicsContext, _ size: CGSize) {
+        var line = Path()
+        let y = yPosition(0, size)
+        line.move(to: CGPoint(x: 0, y: y))
+        line.addLine(to: CGPoint(x: size.width, y: y))
+        context.stroke(
+            line,
+            with: .color(
+                themeMode == "TokyoNight" ? Theme.TokyoNight.border : .primary.opacity(0.12)),
+            lineWidth: 1)
+    }
+
+    private func drawGrid(_ context: GraphicsContext, _ size: CGSize) {
+        let bottom = plotHeight(size)
+        let left = axisGutter
+        let axis = axis(size)
+        let compactIndices = [
+            0, anchors.count / 4, anchors.count / 2,
+            anchors.count * 3 / 4, anchors.count - 1,
+        ]
+        let labelFrequencies =
+            compact
+            ? compactIndices.compactMap { index in
+                anchors.indices.contains(index) ? anchors[index] : nil
+            }
+            : anchors
+
+        // Dotted verticals on the band centers are the whole grid — the major
+        // frequency divisions, and nothing else competing with the curve.
+        var verticals = Path()
+        for frequency in compact ? labelFrequencies : anchors {
+            let x = axis.x(frequency)
+            verticals.move(to: CGPoint(x: x, y: 0))
+            verticals.addLine(to: CGPoint(x: x, y: bottom))
+        }
+        context.stroke(
+            verticals,
+            with: .color(
+                themeMode == "TokyoNight" ? Theme.TokyoNight.border : .primary.opacity(0.09)),
+            style: StrokeStyle(lineWidth: 1, dash: [2, 4])
+        )
+
+        // The single reference the curve is actually read against.
+        var zeroLine = Path()
+        let zeroY = yPosition(0, size)
+        zeroLine.move(to: CGPoint(x: left, y: zeroY))
+        zeroLine.addLine(to: CGPoint(x: size.width, y: zeroY))
+        context.stroke(
+            zeroLine,
+            with: .color(
+                themeMode == "TokyoNight"
+                    ? Theme.TokyoNight.borderHighlight.opacity(0.4) : .primary.opacity(0.14)),
+            lineWidth: 1)
+
+        for frequency in labelFrequencies {
+            let label = Text(BandFormat.frequency(frequency))
+                .font(Theme.Font.secondary)
+                .foregroundStyle(
+                    themeMode == "TokyoNight" ? Theme.TokyoNight.fgDark : Color.secondary)
+            context.draw(
+                label, at: CGPoint(x: axis.x(frequency), y: bottom + labelStripHeight / 2),
+                anchor: .center)
+        }
+        // Lighter than the frequency labels: the dB scale should never pull the
+        // eye off the curve.
+        for dB in labeledDBs {
+            let label = Text(BandFormat.axisGain(dB))
+                .font(Theme.Font.secondary)
+                .foregroundStyle(
+                    themeMode == "TokyoNight"
+                        ? Theme.TokyoNight.comment : Color(nsColor: .tertiaryLabelColor))
+            context.draw(label, at: CGPoint(x: left - 8, y: yPosition(dB, size)), anchor: .trailing)
+        }
+
+    }
+
+    /// The highlighted point's own filter, on its own, under the composite.
+    ///
+    /// This is what makes the points legible. Filters overlap, so the summed
+    /// curve sits above any single one's gain and a handle appears to float off
+    /// it. Showing the one response the handle belongs to — peaking exactly at
+    /// the handle — makes it plain that the bold line is the sum of the whole
+    /// chain, not the thing being dragged.
+    ///
+    /// The selected filter gets the same treatment while nothing is being
+    /// pointed at, so choosing a row in the parametric table shows what that
+    /// row is doing to the sound and not only which node it owns.
+    private func drawHighlightedFilterCurve(_ context: GraphicsContext, _ size: CGSize) {
+        guard let handle = activeDrag ?? activeHover ?? selectedFilterID.map(Handle.filter) else {
+            return
+        }
+        let source: EQFilter?
+        switch handle {
+        case .band(let slot): source = bands[safe: slot]
+        case .filter(let id): source = freeFilters.first { $0.id == id }
+        }
+        guard let source else { return }
+        let tint = source.isBand ? Color.eqRSignal : BandColor.at(source.colorIndex).color
+        let biquad = Biquad(filter: source, sampleRate: sampleRate)
+        let axis = axis(size)
+
+        var response = Path()
+        let fractions = axis.sampleFractions(
+            count: Self.curvePointCount, centres: [source.frequency])
+        for (step, fraction) in fractions.enumerated() {
+            let dB = biquad.magnitudeDB(
+                at: axis.frequency(atFraction: fraction), sampleRate: sampleRate)
+            let point = CGPoint(
+                x: axisGutter + CGFloat(fraction) * plotWidth(size), y: yPosition(dB, size))
+            if step == 0 {
+                response.move(to: point)
+            } else {
+                response.addLine(to: point)
+            }
+        }
+
+        context.stroke(
+            response,
+            with: .color(tint.opacity(0.5)),
+            style: StrokeStyle(lineWidth: 1, lineJoin: .round, dash: [3, 3])
+        )
+    }
+
+    private func drawCurve(_ context: GraphicsContext, _ size: CGSize) {
+        let points = responsePoints(size)
+        guard points.count > 1 else { return }
+
+        var curve = Path()
+        curve.move(to: points[0])
+        curve.addLines(Array(points.dropFirst()))
+
+        // Fill the area under the curve down to the floor of the plot — a flat
+        // wash rather than a gradient, so it reads as a tint and not as a
+        // second graphic competing with the line.
+        let floor = plotHeight(size)
+        var fill = curve
+        fill.addLine(to: CGPoint(x: points[points.count - 1].x, y: floor))
+        fill.addLine(to: CGPoint(x: points[0].x, y: floor))
+        fill.closeSubpath()
+        // A tint under the line, not a block of colour. A boosted curve sits
+        // above zero across the whole range, so the area beneath it is most of
+        // the plot — at any real opacity that area, not the curve, becomes the
+        // subject.
+        context.fill(
+            fill,
+            with: .linearGradient(
+                Gradient(colors: [
+                    Color.eqRSignal.opacity(themeMode == "TokyoNight" ? 0.16 : 0.10),
+                    (themeMode == "TokyoNight" ? Theme.TokyoNight.blue : Color.eqRSignal).opacity(
+                        0.01),
+                ]),
+                startPoint: CGPoint(x: 0, y: 0),
+                endPoint: CGPoint(x: 0, y: floor)
+            )
+        )
+
+        context.stroke(
+            curve, with: .color(.eqRSignal),
+            style: StrokeStyle(lineWidth: themeMode == "TokyoNight" ? 2 : 1.5, lineJoin: .round)
+        )
+    }
+
+    private func drawBandMarkers(_ context: GraphicsContext, _ size: CGSize) {
+        let axis = axis(size)
+        for (slot, band) in bands.enumerated() {
+            let isHighlighted = (activeDrag ?? activeHover) == .band(slot)
+            // Bands the processor cannot render (at or above Nyquist for the
+            // current sample rate) are shown dimmed. A band at 0 dB is not one
+            // of them — it is flat, which is a value like any other.
+            let isActive =
+                band.isEnabled
+                && Biquad.isRealisable(
+                    frequency: band.frequency, sampleRate: sampleRate
+                )
+            let center = bandHandleCenter(band, axis, size)
+            let radius: CGFloat = isHighlighted ? 5 : 4
+            let dot = circle(at: center, radius: radius)
+
+            // Logic Pro's handle: a white core inside an accent ring, which
+            // stays legible over both the fill and the grid.
+            context.fill(dot, with: .color(.white.opacity(isActive ? 0.95 : 0.6)))
+            context.stroke(
+                dot,
+                with: .color(Color.eqRSignal.opacity(isActive ? 1.0 : 0.6)),
+                lineWidth: isHighlighted ? 2 : 1.5
+            )
+        }
+
+        // The value goes here, at the handle, whether the band is being pointed
+        // at or moved, and from either grip — this point or its slider below. It
+        // is the number and the shape in one place, which is the reason the
+        // curve is the biggest thing in the window.
+        //
+        // Reading a value must not require changing it. Showing this on drag
+        // alone meant the only way to find out where a band sat was to pick it
+        // up, which puts an undo between the user and a question they only
+        // wanted answered.
+        if case .band(let slot)? = activeDrag ?? activeHover, let band = bands[safe: slot] {
+            drawGainLabel(
+                context, size, center: bandHandleCenter(band, axis, size), gain: band.gain)
+        }
+    }
+
+    /// Free filters, drawn larger than the band handles and numbered.
+    ///
+    /// The size difference is the visual half of the same distinction the drag
+    /// enforces: these are the points that move in two axes.
+    ///
+    /// Each node takes its band's own colour rather than the curve's green, so
+    /// the row in the parametric list and the point on the graph are visibly
+    /// the same band. The curve itself stays green: it is the output, and the
+    /// output belongs to no single band.
+    private func drawFilterNodes(_ context: GraphicsContext, _ size: CGSize) {
+        let axis = axis(size)
+        for (index, filter) in freeFilters.enumerated() {
+            let tint = BandColor.at(filter.colorIndex).color
+            let isHighlighted = (activeDrag ?? activeHover) == .filter(filter.id)
+            let isSelected = selectedFilterID == filter.id
+            // Dimmed only when the band is switched off or its frequency can't
+            // be rendered at this sample rate. Not when its gain is 0: a band
+            // that was just added sits at 0 dB, and dimming it there says it is
+            // inactive when it is simply flat.
+            let isActive =
+                filter.isEnabled
+                && Biquad.isRealisable(
+                    frequency: filter.frequency, sampleRate: sampleRate
+                )
+            let center = filterNodeCenter(filter, axis, size)
+            // Large enough for the number inside to be read rather than
+            // guessed at, which is the whole point of putting it there: the
+            // number is how a node is matched to its row in the table.
+            let radius: CGFloat = isHighlighted ? 10 : 9
+            let core = circle(at: center, radius: radius)
+
+            // Selection is a heavier outline, exactly as it is on a band
+            // slider's knob — no ring drawn around the point. The selected
+            // filter's own response is already on the plot as a dashed line,
+            // and that says which band is chosen better than a halo does.
+            context.fill(core, with: .color(.white.opacity(isActive ? 0.95 : 0.6)))
+            context.stroke(
+                core,
+                with: .color(tint.opacity(isActive ? 1.0 : 0.6)),
+                lineWidth: isHighlighted || isSelected ? 3 : 2
+            )
+
+            let number = Text(verbatim: "\(index + 1)")
+                .font(Theme.Font.valueEmphasized)
+                .foregroundStyle(Color.black.opacity(isActive ? 0.75 : 0.5))
+            context.draw(number, at: center, anchor: .center)
+
+        }
+
+        // Pointed at or moved, as with a band. A free filter carries its
+        // frequency too: unlike a rung, it can be anywhere, so the value is not
+        // readable from the axis beneath it.
+        if case .filter(let id)? = activeDrag ?? activeHover,
+            let filter = freeFilters.first(where: { $0.id == id })
+        {
+            let center = filterNodeCenter(filter, axis, size)
+            let text =
+                filter.kind.usesGain
+                ? "\(BandFormat.frequency(filter.frequency)) Hz  \(BandFormat.gain(filter.gain))"
+                : "\(BandFormat.frequency(filter.frequency)) Hz"
+            drawLabel(context, size, center: center, text: text)
+        }
+    }
+
+    private func circle(at center: CGPoint, radius: CGFloat) -> Path {
+        Path(
+            ellipseIn: CGRect(
+                x: center.x - radius,
+                y: center.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            ))
+    }
+
+    private func drawGainLabel(
+        _ context: GraphicsContext, _ size: CGSize, center: CGPoint, gain: Double
+    ) {
+        drawLabel(context, size, center: center, text: BandFormat.gain(gain))
+    }
+
+    private func drawLabel(
+        _ context: GraphicsContext, _ size: CGSize, center: CGPoint, text: String
+    ) {
+        let label = Text(text)
+            .font(Theme.Font.value)
+            .foregroundStyle(.primary)
+        let position = CGPoint(
+            x: min(max(center.x, 60), size.width - 60),
+            y: max(center.y - 14, 14)
+        )
+        context.draw(label, at: position, anchor: .bottom)
+    }
+
+    // MARK: - Response math (mirrors EQProcessor)
+
+    private func responsePoints(_ size: CGSize) -> [CGPoint] {
+        let biquads = filters.map { Biquad(filter: $0, sampleRate: sampleRate) }
+        let axis = axis(size)
+
+        let fractions = axis.sampleFractions(
+            count: Self.curvePointCount, centres: filters.map(\.frequency))
+        return fractions.map { fraction in
+            let frequency = axis.frequency(atFraction: fraction)
+            let dB = biquads.reduce(preamp) {
+                $0 + $1.magnitudeDB(at: frequency, sampleRate: sampleRate)
+            }
+            return CGPoint(
+                x: axisGutter + CGFloat(fraction) * plotWidth(size), y: yPosition(dB, size))
+        }
+    }
+
+    // MARK: - Coordinate mapping
+
+    /// The mapping this plot draws against, rebuilt per layout pass.
+    private func axis(_ size: CGSize) -> ResponseAxis {
+        ResponseAxis(anchors: anchors, gutter: axisGutter, width: size.width)
+    }
+
+    /// Only the drag path needs this outside a loop; everywhere else builds the
+    /// axis once and asks it directly.
+    private func frequency(atFraction t: Double) -> Double {
+        ResponseAxis(anchors: anchors, gutter: axisGutter, width: 0).frequency(atFraction: t)
+    }
+
+    /// Horizontal extent of the plot, to the right of the dB-label gutter.
+    private func plotWidth(_ size: CGSize) -> CGFloat {
+        max(size.width - axisGutter, 1)
+    }
+
+    /// The minimal menu graph reserves only half the stroke width at the top and
+    /// bottom, so at extreme settings the curve reaches the edges of the compact
+    /// box and clamps there — filling the space without the line bleeding past
+    /// the border. The full window keeps its original edge-to-edge mapping.
+    private var verticalInset: CGFloat { minimal ? 1 : 0 }
+
+    /// Strip along the bottom holding the frequency labels. Keeping it outside
+    /// the dB scale stops the lowest gridline label from landing on top of the
+    /// first band's label in the corner.
+    private var labelStripHeight: CGFloat { minimal ? 0 : 17 }
+
+    /// Vertical extent of the dB scale, above the frequency-label strip.
+    private func plotHeight(_ size: CGSize) -> CGFloat {
+        max(size.height - labelStripHeight, 1)
+    }
+
+    private func yPosition(_ dB: Double, _ size: CGSize) -> CGFloat {
+        ResponseGainAxis(limit: maxDB, height: plotHeight(size), inset: verticalInset)
+            .y(for: dB)
+    }
+}

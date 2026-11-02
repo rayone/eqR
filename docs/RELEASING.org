@@ -1,0 +1,215 @@
+#+TITLE: eqR — Releasing
+#+OPTIONS: toc:2 num:nil
+
+How eqR is checked on every change and how a release is cut. Building
+and testing locally are in [[file:DEVELOPMENT.org][DEVELOPMENT.org]].
+
+* Continuous integration
+
+
+Three workflows, deliberately on different schedules.
+
+- *=ci.yml=* — =make lint=, =make test=, =make build= on every push and pull
+  request. About 2.5 minutes.
+- *=release.yml=* — =make release= on a =v*= tag, with the linked-SDK assertion
+  described under [[*Cutting a release][Cutting a release]].
+- *=codeql.yml=* — split by language, because the two cost three orders of
+  magnitude apart. The =actions= analysis runs on every push and pull request:
+  40 seconds on ubuntu, and it is the one with something to find here — script
+  injection from untrusted event data, unpinned actions, over-broad token
+  permissions. The =swift= analysis runs *weekly and on =workflow_dispatch=
+  only*.
+
+Swift is off the per-commit path because it cannot be made cheap. It has no
+build-free extraction — =build-mode: none= is unsupported and =autobuild= only
+runs the same xcodebuild — so every analysis costs a full compile, and under
+CodeQL's tracing that compile took 17 minutes against 42 seconds for the
+identical =make build= in =ci.yml=. The extractor is the cost, not the project.
+Running it on =push= and =pull_request= analyzed every change twice and
+accounted for 90% of all CodeQL minutes the repository had ever spent.
+
+The yield did not justify that. CodeQL's Swift suite targets network, crypto,
+WebView and JavaScript, SQL, =NSPredicate=, XML, regex, and command or path
+injection; eqR has almost none of that surface and no third-party
+dependencies. The exception, from 1.10, is the AutoEq catalog: HTTPS requests
+the user starts, to two fixed GitHub hosts, with path encoding and cache writes
+covered by unit tests. That is not enough to put the run back in front of every
+pull request. The weekly run still keeps the Security tab current and picks up
+new query packs.
+
+The job also builds *one* slice (=XCODE_FLAGS=ARCHS=arm64=): extraction is
+source-level, so the second architecture doubles the traced compile and adds
+nothing to the database. =ONLY_ACTIVE_ARCH=YES= does not work for this —
+with =-target= and no destination there is no active architecture to pick, and
+the build comes out universal regardless.
+
+And it runs on =macos-26= (Xcode 26), not the =xcode-27= image the other two
+jobs use. CodeQL's Swift extractor is x86_64 and runs under Rosetta, and Xcode
+27 is arm64 only. Its =swift-plugin-server= cannot start, so every macro fails
+to expand — on the 27 SDK that includes SwiftUI's =@State= — and on macOS 27
+even =/usr/bin/tiffutil= has no x86_64 slice. Both failed with “Bad CPU type in
+executable”. Xcode 26 is still universal. Nothing this job builds ships, and the
+sources build against the 26 SDK, so the analysis loses nothing. Move it back
+once CodeQL's extractor runs natively on arm64.
+
+
+* Cutting a release
+
+
+eqR is signed with its own self-signed certificate and is not notarized (no
+Apple Developer account); see “Signing” below. The release pipeline is GitHub
+Actions
+(=.github/workflows/release.yml=): pushing a tag matching =v*= builds
+=make release= on a macOS runner and attaches the zip to a GitHub Release
+with generated notes.
+
+*The runner image is a user-visible choice.* AppKit decides which generation of
+the macOS design an app renders in from the SDK it was *linked against*, not
+from the macOS running it. Building 1.6 on the =macos-15= image (Xcode 16, SDK
+15.5) shipped a binary that drew as a pre-26 app on every current Mac, while
+local builds against the 26 SDK looked native — same commit, same version, two
+different-looking apps. The two jobs that build the app to run it — =ci.yml=
+and =release.yml= — therefore pin the *same* image (the Swift analysis cannot
+yet; see above), and
+the release job asserts the linked SDK out of =LC_BUILD_VERSION= before
+publishing. The deployment target (=MACOSX_DEPLOYMENT_TARGET= 14.2) is set in
+the project and is unaffected by any of this: a 27-SDK build still runs on macOS
+14.2.
+
+That image is =xcode-27=, not =macos-27=. There is no GA macOS 27 label —
+=macos-latest= still resolves to the macOS 26 image, whose default is Xcode 26.x
+— so =xcode-27= (macOS 27 base, Xcode 27 default) is the only hosted way to link
+against the 27 SDK. Three consequences worth knowing before a release:
+
+- It is a *preview* image. Its Xcode is not version-pinned, and capacity can be
+  tighter than the GA images. Move both jobs together when it changes; =ci.yml=
+  exists partly to find out before =release.yml= does.
+  As of image =20260912.0186.1= it carries Xcode *27.0 build 27A266a* — the same
+  build as a current local Xcode 27 — so the toolchain is not a beta despite the
+  label. That is not guaranteed to hold: the SDK assertion checks the
+  generation, not the build, so read the =Show toolchain= step before trusting a
+  tag.
+- The label is =xcode-27= because the image began life as “macOS 26 with Xcode
+  27” and was rebased onto macOS 27 in September 2026. Expect it to be renamed
+  =macos-27= at GA. On precedent that is a while off: =macos-26= shipped as a
+  public beta on 2025-09-11 and went GA on 2026-02-26, and =macos-15= took a
+  comparable six months, so a GA =macos-27= is likely *early-to-mid 2027*, with
+  =macos-latest= following months later. Switch both jobs together then.
+- The linked-SDK assertion requires *27 or newer*, deliberately narrower than
+  the SDK actually in use. If the image ever hands back a 26 toolchain, the
+  release fails instead of silently shipping a binary of the wrong generation —
+  which is the whole failure this guard was written for.
+
+To cut a release:
+
+1. Bump =MARKETING_VERSION= (and =CURRENT_PROJECT_VERSION=) in the target
+   build settings. The release zip is named after this version, not the tag, so
+   =release.yml= refuses to publish when the two disagree — v1.9.1 was first
+   tagged before the bump and came out as =eqR-1.9.zip=.
+2. Commit and push.
+3. Rehearse: run the *Release* workflow by hand (Actions → Release → Run
+   workflow, or =gh workflow run release.yml=). It does everything except check
+   the tag and publish: it imports the certificate, signs, and runs every check,
+   then keeps the signed zip as the =eqR-signed-rehearsal= artifact for a week.
+   A failure here costs nothing. A manual run is only offered once the workflow,
+   trigger included, is on the default branch.
+4. Tag and push:
+   #+begin_src sh
+   git tag v1.1
+   git push origin v1.1
+   #+end_src
+
+* Signing
+
+*Why.* macOS records the System Audio Recording permission against the app's
+designated requirement. Ad-hoc signed, that requirement is the exact binary
+(=cdhash=), so every release was a new app to macOS and every update asked for
+the permission again. Signed with a certificate it is
+
+#+begin_example
+identifier "com.eqr.eqr" and certificate root = H"de1d551e…"
+#+end_example
+
+and every release signed with the same certificate is covered by one grant.
+Measured on macOS 27 with a different binary under the same certificate: no
+prompt, and the tap delivered audio at once. The first signed release (1.10)
+still asks everyone once, because the requirement changes from a =cdhash= to a
+certificate.
+
+*The certificate* is self-signed, made in Keychain Access (Certificate
+Assistant → Create a Certificate…, Identity Type *Self-Signed Root*,
+Certificate Type *Code Signing*, validity 20 years):
+
+| Name                  | =eqR Release=                            |
+| SHA-1 fingerprint     | =DE1D551EEE962BC3E08C8AFA51F126E0E83CA016=  |
+| Valid until           | 2046-06-28                                  |
+
+macOS lists it as not trusted; that does not stop signing, and the permission is
+keyed to the certificate's hash, not to its trust.
+
+*CI* (=release.yml=) imports it from two repository secrets into a keychain
+created for the job and deleted after it, signs by fingerprint through
+=make release SIGN_IDENTITY=…=, and fails unless the signature names the
+pinned fingerprint:
+
+| =SIGNING_CERT_P12=      | the exported =.p12=, base64-encoded                       |
+| =SIGNING_CERT_PASSWORD= | its export password                                       |
+
+The =.p12= must hold the private key, not only the certificate: in Keychain
+Access, open *My Certificates* (not *Certificates*), check that =eqR Release=
+expands to show its key, and export that row as Personal Information Exchange.
+Without the key the release fails at import with “has no identity”, and
+codesign would say “no identity found”.
+
+To put the =.p12= on the clipboard for the first one:
+
+#+begin_src sh
+base64 -i eqR.p12 | pbcopy
+#+end_src
+
+*Keep the =.p12= and its password backed up outside GitHub.* Secrets cannot be
+read back. Losing the certificate means a new one, and a new certificate means
+every user is asked for the permission once more. A leaked one is worse: anything
+signed with it is eqR as far as the permission is concerned. Rotating it is
+deliberate: replace the secrets, change =SIGNING_CERT_SHA1= in =release.yml=,
+update this section and =SECURITY.md=, and say in the release notes that users
+will be asked once more.
+
+*Locally*, builds stay ad-hoc unless asked otherwise:
+
+#+begin_src sh
+make install SIGN_IDENTITY="eqR Release"
+#+end_src
+
+signs the installed copy with the certificate, so it keeps its permission
+across rebuilds like a release does. =make sign= refuses to finish when the
+result is still pinned to the binary.
+
+*What signing does not do.* Gatekeeper still blocks downloaded (quarantined)
+copies on first launch, because the certificate is not Apple's; users bypass it
+once via System Settings → Privacy & Security → *Open Anyway* or by clearing the
+quarantine attribute, as [[file:../README.org][README.org]] describes. Building from source avoids it —
+local builds are never quarantined. Only a Developer ID and notarization remove
+it.
+
+
+* If a Developer ID account becomes available
+
+
+Sign with hardened runtime and notarize; this removes the Gatekeeper warning.
+Switching certificates changes the designated requirement, so that release asks
+every user for the permission once more:
+
+#+begin_src sh
+xcodebuild -project eqR.xcodeproj -target eqR -configuration Release build \
+  CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+  ENABLE_HARDENED_RUNTIME=YES
+
+ditto -c -k --keepParent build/Release/eqR.app eqR.zip
+xcrun notarytool submit eqR.zip --keychain-profile <profile> --wait
+xcrun stapler staple build/Release/eqR.app
+#+end_src
+
+The app is currently *unsandboxed*. App Store distribution would require
+enabling the sandbox and revisiting the audio entitlements; direct
+(Developer ID) distribution does not.

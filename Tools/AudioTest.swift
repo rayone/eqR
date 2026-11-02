@@ -1,0 +1,826 @@
+import AVFoundation
+import CoreAudio
+import Darwin
+import Foundation
+
+/// End-to-end check that eqR produces correct audio on real hardware.
+///
+/// Every serious defect in this project has been at a boundary the unit tests
+/// cannot reach — Core Audio reporting success for a device that plays nothing,
+/// a tap created without permission, a channel map that put audio somewhere
+/// else, a rebuild that broke playback. What they have in common is that the
+/// app kept reporting that it worked. The only thing that catches those is
+/// listening to what actually comes out, so that is what this does.
+///
+/// It plays a known signal through the real application and captures what
+/// reaches the device, using BlackHole so nothing is audible and nothing
+/// depends on speakers. The audio settings it changes are restored on the way
+/// out, including after a failure.
+///
+/// Run with `make audio-test`.
+enum AudioTest {
+
+    // MARK: - Test signal
+
+    /// Left and right carry different tones, so a channel map that swaps or
+    /// smears them is a failure rather than something that still sounds fine.
+    static let leftHz = 440.0
+    static let rightHz = 1_320.0
+    static let amplitude = 0.4
+    static let rate = 48_000.0
+    static let toneSeconds = 2.5
+
+    // MARK: - Results
+
+    struct Measurement {
+        /// Magnitude at each test frequency, per device channel.
+        var atLeft: [Double]
+        var atRight: [Double]
+        /// Broadband RMS per channel.
+        var rms: [Double]
+        var channels: Int
+
+        func decibels(_ magnitude: Double) -> Double {
+            magnitude > 0 ? 20 * log10(magnitude) : -200
+        }
+    }
+
+    /// Returned when the machine could not be put in a state where the checks
+    /// mean anything — no BlackHole, no permission, nothing captured.
+    static let couldNotRun: Int32 = 2
+
+    nonisolated(unsafe) static var failures = 0
+    nonisolated(unsafe) static var checks = 0
+
+    /// Reported, but not counted either way: a check whose precondition does
+    /// not hold on this machine. Saying so is the point — a check that quietly
+    /// did not run is worse than one that failed.
+    static func skip(_ name: String, _ reason: String) {
+        print("  SKIP  \(name)  — \(reason)")
+    }
+
+    static func check(_ name: String, _ passed: Bool, _ detail: String = "") {
+        checks += 1
+        if passed {
+            print("  PASS  \(name)\(detail.isEmpty ? "" : "  — \(detail)")")
+        } else {
+            failures += 1
+            print("  FAIL  \(name)\(detail.isEmpty ? "" : "  — \(detail)")")
+        }
+    }
+
+    static func note(_ text: String) { print("        \(text)") }
+
+    /// Reading a device's input is gated by the microphone permission, and the
+    /// gate is silent: a denied process gets an input stream that delivers
+    /// zeros rather than an error. Every measurement below would then read
+    /// -200 dB, and the comparisons between them would happily agree with each
+    /// other — a page of passes that mean nothing.
+    ///
+    /// The permission belongs to whatever is running this, so it is granted per
+    /// terminal. Running the same command from a different one is enough to
+    /// change the answer, which is exactly how this was found.
+    static func microphoneIsAllowed() -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            return true
+        case .notDetermined:
+            let semaphore = DispatchSemaphore(value: 0)
+            nonisolated(unsafe) var granted = false
+            AVCaptureDevice.requestAccess(for: .audio) {
+                granted = $0
+                semaphore.signal()
+            }
+            _ = semaphore.wait(timeout: .now() + 30)
+            return granted
+        default:
+            return false
+        }
+    }
+}
+
+// MARK: - Core Audio helpers
+
+extension AudioTest {
+    static func address(
+        _ selector: AudioObjectPropertySelector,
+        _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal
+    ) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(
+            mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+    }
+
+    static func devices() -> [AudioDeviceID] {
+        var addr = address(kAudioHardwarePropertyDevices)
+        var size: UInt32 = 0
+        guard
+            AudioObjectGetPropertyDataSize(
+                AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size) == noErr
+        else { return [] }
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &ids)
+        return ids
+    }
+
+    static func name(of device: AudioDeviceID) -> String {
+        var addr = address(kAudioObjectPropertyName)
+        var value: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<CFString?>.size)
+        guard AudioObjectGetPropertyData(device, &addr, 0, nil, &size, &value) == noErr else {
+            return "?"
+        }
+        return value?.takeRetainedValue() as String? ?? "?"
+    }
+
+    static func outputChannels(of device: AudioDeviceID) -> Int {
+        var addr = address(kAudioDevicePropertyStreamConfiguration, kAudioObjectPropertyScopeOutput)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(device, &addr, 0, nil, &size) == noErr, size > 0
+        else { return 0 }
+        let blob = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: 16)
+        defer { blob.deallocate() }
+        guard AudioObjectGetPropertyData(device, &addr, 0, nil, &size, blob) == noErr else {
+            return 0
+        }
+        let list = UnsafeMutableAudioBufferListPointer(
+            blob.assumingMemoryBound(to: AudioBufferList.self))
+        return list.reduce(0) { $0 + Int($1.mNumberChannels) }
+    }
+
+    static func defaultOutput() -> AudioDeviceID {
+        var addr = address(kAudioHardwarePropertyDefaultOutputDevice)
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &id)
+        return id
+    }
+
+    @discardableResult
+    static func setDefaultOutput(_ id: AudioDeviceID) -> Bool {
+        var addr = address(kAudioHardwarePropertyDefaultOutputDevice)
+        var value = id
+        return AudioObjectSetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil,
+            UInt32(MemoryLayout<AudioDeviceID>.size), &value) == noErr
+    }
+
+    static func nominalRate(of device: AudioDeviceID) -> Double {
+        var addr = address(kAudioDevicePropertyNominalSampleRate)
+        var value = 0.0
+        var size = UInt32(MemoryLayout<Float64>.size)
+        AudioObjectGetPropertyData(device, &addr, 0, nil, &size, &value)
+        return value
+    }
+
+    @discardableResult
+    static func setNominalRate(_ rate: Double, on device: AudioDeviceID) -> Bool {
+        var addr = address(kAudioDevicePropertyNominalSampleRate)
+        var value = rate
+        return AudioObjectSetPropertyData(
+            device, &addr, 0, nil, UInt32(MemoryLayout<Float64>.size), &value) == noErr
+    }
+
+    /// Whether the machine is being held awake on eqR's behalf.
+    ///
+    /// Only meaningful on real hardware. A virtual device does not always make
+    /// coreaudiod raise an assertion at all, so this is checked against a
+    /// precondition rather than asserted blindly — see `sleepAssertionApplies`.
+    static func sleepAssertionHeld() -> Bool {
+        shell("/usr/bin/pmset", ["-g", "assertions"]).contains("eqr.eqr")
+    }
+
+    /// Whether anything at all is using the device.
+    ///
+    /// The direct signal for whether eqR has let go: idling stops its IO
+    /// proc, and a device nobody is running reports false. Unlike the sleep
+    /// assertion this means the same thing on every device, real or virtual.
+    static func isRunningSomewhere(_ device: AudioDeviceID) -> Bool {
+        var addr = address(kAudioDevicePropertyDeviceIsRunningSomewhere)
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        return AudioObjectGetPropertyData(device, &addr, 0, nil, &size, &value) == noErr
+            && value != 0
+    }
+
+    /// The names of other processes playing audio right now — anything but this
+    /// test, the player it starts, and eqR, which are expected to.
+    ///
+    /// The idle checks need this. eqR releases the device only when its own
+    /// output has been silent *and* no other process is playing, so a music
+    /// player left running makes it keep the device — correctly — and the check
+    /// fails for a reason that has nothing to do with eqR. The test moves the
+    /// Mac's output to BlackHole, so that player is not even audible.
+    static func otherProcessesPlaying() -> [String] {
+        var listAddress = address(kAudioHardwarePropertyProcessObjectList)
+        var size: UInt32 = 0
+        guard
+            AudioObjectGetPropertyDataSize(
+                AudioObjectID(kAudioObjectSystemObject), &listAddress, 0, nil, &size) == noErr,
+            size > 0
+        else { return [] }
+        var processes = [AudioObjectID](
+            repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard
+            AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject), &listAddress, 0, nil, &size, &processes)
+                == noErr
+        else { return [] }
+
+        let expected: Set<String> = ["eqR", "afplay", "audio-test"]
+        var names: [String] = []
+        for process in processes {
+            var runningAddress = address(kAudioProcessPropertyIsRunningOutput)
+            var isRunning: UInt32 = 0
+            var valueSize = UInt32(MemoryLayout<UInt32>.size)
+            guard
+                AudioObjectGetPropertyData(
+                    process, &runningAddress, 0, nil, &valueSize, &isRunning) == noErr,
+                isRunning != 0
+            else { continue }
+
+            var pidAddress = address(kAudioProcessPropertyPID)
+            var pid: pid_t = 0
+            valueSize = UInt32(MemoryLayout<pid_t>.size)
+            AudioObjectGetPropertyData(process, &pidAddress, 0, nil, &valueSize, &pid)
+            guard pid != getpid() else { continue }
+
+            var buffer = [CChar](repeating: 0, count: 256)
+            proc_name(pid, &buffer, UInt32(buffer.count))
+            let name = String(cString: buffer)
+            if !expected.contains(name) { names.append(name.isEmpty ? "pid \(pid)" : name) }
+        }
+        return Array(Set(names)).sorted()
+    }
+
+    @discardableResult
+    static func shell(_ launchPath: String, _ arguments: [String]) -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: launchPath)
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        try? process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+}
+
+// MARK: - Playing and capturing
+
+extension AudioTest {
+    /// A stereo WAV of the two test tones, written once and reused.
+    static func writeToneFile() -> URL {
+        let frames = Int(rate * toneSeconds)
+        var samples = [Int16](repeating: 0, count: frames * 2)
+        for frame in 0..<frames {
+            let t = Double(frame) / rate
+            samples[frame * 2] = Int16(amplitude * 32_767 * sin(2 * .pi * leftHz * t))
+            samples[frame * 2 + 1] = Int16(amplitude * 32_767 * sin(2 * .pi * rightHz * t))
+        }
+        var data = Data()
+        func append<T: FixedWidthInteger>(_ value: T) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+        let payload = UInt32(samples.count * 2)
+        data.append(contentsOf: Array("RIFF".utf8))
+        append(UInt32(36 + payload))
+        data.append(contentsOf: Array("WAVEfmt ".utf8))
+        append(UInt32(16))
+        append(UInt16(1))
+        append(UInt16(2))
+        append(UInt32(rate))
+        append(UInt32(rate) * 4)
+        append(UInt16(4))
+        append(UInt16(16))
+        data.append(contentsOf: Array("data".utf8))
+        append(payload)
+        samples.withUnsafeBufferPointer { data.append(contentsOf: UnsafeRawBufferPointer($0)) }
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("eqr-audio-test-tone.wav")
+        try? data.write(to: url)
+        return url
+    }
+
+    /// Plays the tone and reports what arrived at `device`'s input.
+    ///
+    /// The magnitude at each test frequency is accumulated per channel as the
+    /// audio arrives — one complex multiply-add per sample, no storage — so a
+    /// swapped or smeared channel shows up as energy at the wrong frequency
+    /// rather than as a level that still looks plausible.
+    static func measure(on device: AudioDeviceID, tone: URL) -> Measurement? {
+        let channels = outputChannels(of: device)
+        guard channels > 0 else { return nil }
+        // The rate the device is actually running at, which is not always
+        // `rate`: the sample rate check below changes it. The tone file stays at
+        // `rate` and the system resamples it, so its frequencies are unchanged.
+        let deviceRate = nominalRate(of: device)
+
+        final class Accumulator: @unchecked Sendable {
+            var leftReal: [Double]
+            var leftImaginary: [Double]
+            var rightReal: [Double]
+            var rightImaginary: [Double]
+            var square: [Double]
+            var frames = 0
+            /// Only the steady middle of the tone is integrated. Including the
+            /// silence either side made the result depend on exactly when the
+            /// player started, which drifted a whole decibel between runs — and
+            /// a decibel of noise is the size of the differences being looked
+            /// for.
+            var accumulating = false
+            let channels: Int
+            init(channels: Int) {
+                self.channels = channels
+                leftReal = .init(repeating: 0, count: channels)
+                leftImaginary = .init(repeating: 0, count: channels)
+                rightReal = .init(repeating: 0, count: channels)
+                rightImaginary = .init(repeating: 0, count: channels)
+                square = .init(repeating: 0, count: channels)
+            }
+        }
+        let accumulator = Accumulator(channels: channels)
+
+        var procID: AudioDeviceIOProcID?
+        let status = AudioDeviceCreateIOProcIDWithBlock(&procID, device, nil) {
+            _, input, _, _, _ in
+            let list = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
+            var base = 0
+            for i in 0..<list.count {
+                guard let data = list[i].mData?.assumingMemoryBound(to: Float.self) else {
+                    continue
+                }
+                let bufferChannels = Int(list[i].mNumberChannels)
+                guard bufferChannels > 0 else { continue }
+                let frames =
+                    Int(list[i].mDataByteSize) / (MemoryLayout<Float>.size * bufferChannels)
+                guard accumulator.accumulating else { continue }
+                for frame in 0..<frames {
+                    let n = Double(accumulator.frames + frame)
+                    let leftPhase = -2 * Double.pi * leftHz * n / deviceRate
+                    let rightPhase = -2 * Double.pi * rightHz * n / deviceRate
+                    for channel in 0..<bufferChannels {
+                        let global = base + channel
+                        guard global < accumulator.channels else { continue }
+                        let x = Double(data[frame * bufferChannels + channel])
+                        accumulator.leftReal[global] += x * cos(leftPhase)
+                        accumulator.leftImaginary[global] += x * sin(leftPhase)
+                        accumulator.rightReal[global] += x * cos(rightPhase)
+                        accumulator.rightImaginary[global] += x * sin(rightPhase)
+                        accumulator.square[global] += x * x
+                    }
+                }
+                if i == list.count - 1 { accumulator.frames += frames }
+                base += bufferChannels
+            }
+        }
+        guard status == noErr, let procID else { return nil }
+        defer {
+            AudioDeviceStop(device, procID)
+            AudioDeviceDestroyIOProcID(device, procID)
+        }
+        AudioDeviceStart(device, procID)
+
+        // Let the device settle before the tone, so the first buffers after a
+        // resume are inside the measurement rather than before it.
+        Thread.sleep(forTimeInterval: 0.4)
+        let player = Process()
+        player.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+        player.arguments = [tone.path]
+        try? player.run()
+
+        // A fixed window in the middle of the tone, clear of the player
+        // starting and stopping.
+        Thread.sleep(forTimeInterval: 0.7)
+        accumulator.accumulating = true
+        Thread.sleep(forTimeInterval: toneSeconds - 1.4)
+        accumulator.accumulating = false
+
+        player.waitUntilExit()
+
+        let n = Double(max(accumulator.frames, 1))
+        func magnitude(_ real: [Double], _ imaginary: [Double]) -> [Double] {
+            (0..<channels).map { 2 * (real[$0] * real[$0] + imaginary[$0] * imaginary[$0]).squareRoot() / n }
+        }
+        return Measurement(
+            atLeft: magnitude(accumulator.leftReal, accumulator.leftImaginary),
+            atRight: magnitude(accumulator.rightReal, accumulator.rightImaginary),
+            rms: (0..<channels).map { (accumulator.square[$0] / n).squareRoot() },
+            channels: channels)
+    }
+}
+
+// MARK: - The app under test
+
+extension AudioTest {
+    static let appPath = "build/Release/eqR.app"
+
+    static func isRunning() -> Bool {
+        !shell("/usr/bin/pgrep", ["-x", "eqR"]).trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
+    }
+
+    /// The bundle a running eqR was launched from, so the one the user had
+    /// can be put back afterwards — which may be the installed copy in
+    /// /Applications rather than the build this test uses.
+    static func runningBundle() -> String? {
+        let pid = shell("/usr/bin/pgrep", ["-x", "eqR"])
+            .split(separator: "\n").first.map(String.init)
+        guard let pid else { return nil }
+        let executable = shell("/bin/ps", ["-p", pid, "-o", "comm="])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let range = executable.range(of: "/Contents/MacOS/") else { return nil }
+        return String(executable[executable.startIndex..<range.lowerBound])
+    }
+
+    /// Ends every copy of eqR, not just one.
+    ///
+    /// More than one can be running — an installed copy and a build, or one
+    /// left behind by an earlier run — and each has its own tap and aggregate
+    /// muting the same device. Measuring through that would report whatever the
+    /// two of them happened to do to each other.
+    static func quitApp() {
+        shell("/usr/bin/pkill", ["-x", "eqR"])
+        for _ in 0..<40 where isRunning() { Thread.sleep(forTimeInterval: 0.25) }
+        Thread.sleep(forTimeInterval: 0.5)
+    }
+
+    static func launchApp() -> Bool {
+        shell("/usr/bin/open", [appPath])
+        for _ in 0..<40 {
+            Thread.sleep(forTimeInterval: 0.25)
+            if isRunning() { break }
+        }
+        // The engine builds its tap and aggregate after launch, and on a first
+        // run it also has to prove the tap before it starts processing.
+        Thread.sleep(forTimeInterval: 6)
+        return isRunning()
+    }
+
+    /// Whether the engine takes the device back when something plays.
+    ///
+    /// Sampled *during* playback, because that is the only moment the answer is
+    /// meaningful — the device is released again once the audio stops.
+    static func tookDeviceBack(_ device: AudioDeviceID, tone: URL) -> Bool {
+        let player = Process()
+        player.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+        player.arguments = [tone.path]
+        try? player.run()
+        defer { player.waitUntilExit() }
+
+        let deadline = Date().addingTimeInterval(toneSeconds - 0.3)
+        while Date() < deadline {
+            if isRunningSomewhere(device) { return true }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        return false
+    }
+
+    /// Waits for the engine to let go of the device, which it does after
+    /// `IdlePolicy.idleAfter` of silence.
+    static func waitForIdle(_ device: AudioDeviceID, limit: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(limit)
+        while Date() < deadline {
+            if !isRunningSomewhere(device) { return true }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        return false
+    }
+}
+
+// MARK: - The run
+
+extension AudioTest {
+    static func run() -> Int32 {
+        print("eqR audio test\n")
+
+        guard FileManager.default.fileExists(atPath: appPath) else {
+            print("  build/Release/eqR.app not found — run `make build` first.")
+            return couldNotRun
+        }
+        guard microphoneIsAllowed() else {
+            print("  This needs permission to record audio, because it measures the sound by")
+            print("  reading it back from BlackHole's input. macOS does not report a refusal")
+            print("  here — it hands over an input stream that delivers silence — so without")
+            print("  it every measurement below would read -200 dB and agree with itself.")
+            print("")
+            print("  The permission belongs to the program running this, not to eqR. Allow")
+            print("  your terminal under System Settings > Privacy & Security > Microphone,")
+            print("  or run `make audio-test` from a terminal that already has it.")
+            return couldNotRun
+        }
+
+        guard let blackHole = devices().first(where: { name(of: $0).hasPrefix("BlackHole") }) else {
+            print("  BlackHole is not installed. It is what makes this silent and exact:")
+            print("  the tone is played into it and read straight back out.")
+            print("  brew install blackhole-16ch")
+            return couldNotRun
+        }
+
+        let deviceName = name(of: blackHole)
+        let deviceChannels = outputChannels(of: blackHole)
+        print("  capturing through \(deviceName) (\(deviceChannels) channels)\n")
+
+        // Everything below changes the machine's audio settings. Whatever
+        // happens, they go back.
+        let originalOutput = defaultOutput()
+        let originalRate = nominalRate(of: blackHole)
+        // Noted before anything is killed, so whatever the user had running can
+        // be started again — and started from the same bundle, which may be the
+        // installed copy rather than this build.
+        let previousBundle = runningBundle()
+
+        // The copy this test launches is this test's to clean up. Leaving it
+        // behind would mean the next run measures through an app nobody chose
+        // to start, on a device the user has since changed.
+        defer {
+            quitApp()
+            setNominalRate(originalRate, on: blackHole)
+            setDefaultOutput(originalOutput)
+            if let previousBundle {
+                shell("/usr/bin/open", [previousBundle])
+                print("\n  restored: output \(name(of: originalOutput)), "
+                    + "\(Int(originalRate)) Hz, and eqR as it was")
+            } else {
+                print("\n  restored: output \(name(of: originalOutput)), "
+                    + "\(Int(originalRate)) Hz; eqR left stopped, as it was found")
+            }
+        }
+
+        // Start from nothing, whatever was running before.
+        quitApp()
+
+        // Checked before anything is measured rather than after something
+        // fails: a player left running makes eqR hold the device, which is
+        // right, and the idle checks then fail for a reason that is not
+        // eqR's. Measured — a QuickTime playing into BlackHole did exactly
+        // that, and the run read as a regression until it was stopped.
+        let playing = otherProcessesPlaying()
+        guard playing.isEmpty else {
+            print("  Something else is playing audio: \(playing.joined(separator: ", ")).")
+            print("  eqR holds the audio device for as long as anything plays, so the")
+            print("  checks for releasing it would fail for a reason that is not eqR's.")
+            print("  Stop or quit it, and run this again.")
+            return couldNotRun
+        }
+
+        setNominalRate(rate, on: blackHole)
+        setDefaultOutput(blackHole)
+        Thread.sleep(forTimeInterval: 1)
+        let tone = writeToneFile()
+
+        // --- Ground truth, with eqR out of the way ---------------------
+        guard let baseline = measure(on: blackHole, tone: tone) else {
+            print("  could not capture from \(deviceName)")
+            return couldNotRun
+        }
+        print("Baseline, eqR not running")
+        note(
+            String(
+                format: "left tone %.1f dB on ch0, right tone %.1f dB on ch1",
+                baseline.decibels(baseline.atLeft[0]), baseline.decibels(baseline.atRight[1])))
+        let baselineHeard =
+            baseline.decibels(baseline.atLeft[0]) > -40
+            && baseline.decibels(baseline.atRight[1]) > -40
+        check(
+            "the harness itself hears the test signal", baselineHeard,
+            "everything below is measured against this")
+        // Stopping here rather than carrying on, because the checks below
+        // compare measurements against one another: with nothing captured they
+        // agree perfectly and report a page of passes. A test that cannot
+        // measure has to say so, not produce a green result that means the
+        // silence was consistent.
+        guard baselineHeard else {
+            print("")
+            print("  Nothing was captured, so no check below could mean anything and none")
+            print("  were run. Something else may be using the audio device, or the tone")
+            print("  did not play — try again with nothing else playing.")
+            return couldNotRun
+        }
+        print("")
+
+        // --- With eqR in the path --------------------------------------
+        guard launchApp() else {
+            print("  eqR did not launch")
+            return couldNotRun
+        }
+        // A throwaway pass first. On a fresh launch the engine has to prove the
+        // tap can capture before it starts muting, and proving it ends in a
+        // restart — so the first tone after launch is partly passthrough and
+        // partly processed, and measuring it reports a curve that is really a
+        // seam. One discarded run puts the engine in the state it spends the
+        // rest of its life in.
+        _ = measure(on: blackHole, tone: tone)
+        guard let processed = measure(on: blackHole, tone: tone) else {
+            print("  could not capture with eqR running")
+            return couldNotRun
+        }
+
+        print("With eqR running")
+        let leftGain = processed.decibels(processed.atLeft[0]) - baseline.decibels(baseline.atLeft[0])
+        let rightGain =
+            processed.decibels(processed.atRight[1]) - baseline.decibels(baseline.atRight[1])
+        note(String(format: "gain applied: %+.2f dB at %.0f Hz, %+.2f dB at %.0f Hz",
+                    leftGain, leftHz, rightGain, rightHz))
+
+        // Audio arrives at all. Three shipped defects made the Mac silent while
+        // every layer reported success; each of them fails here.
+        check(
+            "audio reaches the device",
+            processed.decibels(processed.atLeft[0]) > -60
+                && processed.decibels(processed.atRight[1]) > -60,
+            String(format: "ch0 %.1f dB, ch1 %.1f dB",
+                   processed.decibels(processed.atLeft[0]),
+                   processed.decibels(processed.atRight[1])))
+
+        // Each tone comes back on the channel it was played into. The
+        // multichannel defect put audio somewhere else entirely, which sounds
+        // broken but reports fine.
+        let leftLeak = processed.decibels(processed.atLeft[1]) - processed.decibels(processed.atLeft[0])
+        let rightLeak =
+            processed.decibels(processed.atRight[0]) - processed.decibels(processed.atRight[1])
+        check(
+            "channels are not swapped or smeared",
+            leftLeak < -30 && rightLeak < -30,
+            String(format: "crosstalk %.0f dB and %.0f dB", leftLeak, rightLeak))
+
+        // Nothing lands in a channel the tap never fed. On a 16 channel device
+        // this is the multichannel regression guard.
+        if deviceChannels > 2 {
+            let strays = (2..<deviceChannels).filter { processed.decibels(processed.rms[$0]) > -70 }
+            check(
+                "channels beyond the tap stay silent",
+                strays.isEmpty,
+                strays.isEmpty
+                    ? "\(deviceChannels - 2) channels checked"
+                    : "audio found on \(strays.map(String.init).joined(separator: ", "))")
+        }
+
+        // The tap mutes the original and eqR writes its own copy. If the
+        // muting ever stopped working both would play, and the level would jump.
+        check(
+            "the original is muted, not played alongside",
+            abs(leftGain) < 24 && abs(rightGain) < 24,
+            String(format: "%+.1f dB / %+.1f dB against baseline", leftGain, rightGain))
+
+        // Whether this machine raises a sleep assertion for this device at all.
+        // Recorded while audio is definitely flowing, so the idle checks below
+        // know whether that signal means anything here.
+        let assertionApplies = sleepAssertionHeld()
+
+        print("")
+        return checkIdleCycle(
+            blackHole: blackHole, tone: tone, processed: processed,
+            assertionApplies: assertionApplies)
+    }
+}
+
+extension AudioTest {
+    /// The behaviour added in 1.8: the device is released when nothing plays,
+    /// and taken back when something does.
+    ///
+    /// The audio after a resume is compared against the audio before it rather
+    /// than against an absolute figure, which makes the check exact without
+    /// knowing anything about the user's preset.
+    static func checkIdleCycle(
+        blackHole: AudioDeviceID, tone: URL, processed: Measurement, assertionApplies: Bool
+    ) -> Int32 {
+        print("Releasing the device when nothing is playing")
+
+        let released = waitForIdle(blackHole, limit: 45)
+        // Asked now, while it is still true: whatever kept the device may stop
+        // before anyone reads the result.
+        let heldBy = released ? [] : otherProcessesPlaying()
+        check(
+            "the device is let go after silence",
+            released,
+            released
+                ? ""
+                : heldBy.isEmpty
+                    ? "still in use after 45 s, with nothing else playing — the Mac will not sleep"
+                    : "still in use after 45 s — \(heldBy.joined(separator: ", ")) "
+                        + (heldBy.count == 1 ? "is" : "are") + " playing")
+
+        // The moment the whole feature is for: the machine is no longer being
+        // held awake. Checked here rather than after the resume, because this
+        // is the only point at which it should be false.
+        if !assertionApplies {
+            skip(
+                "the Mac is no longer held awake",
+                "\(name(of: blackHole)) raised no assertion; check this on real hardware")
+        } else if released {
+            check("the Mac is no longer held awake", !sleepAssertionHeld())
+        } else {
+            check("the Mac is no longer held awake", false, "the device was never released")
+        }
+
+        guard let resumed = measure(on: blackHole, tone: tone) else {
+            check("audio comes back after idling", false, "could not capture")
+            return failures > 0 ? 1 : 0
+        }
+
+        check(
+            "audio comes back after idling",
+            resumed.decibels(resumed.atLeft[0]) > -60
+                && resumed.decibels(resumed.atRight[1]) > -60,
+            String(format: "ch0 %.1f dB, ch1 %.1f dB",
+                   resumed.decibels(resumed.atLeft[0]), resumed.decibels(resumed.atRight[1])))
+
+        let leftDrift = resumed.decibels(resumed.atLeft[0]) - processed.decibels(processed.atLeft[0])
+        let rightDrift =
+            resumed.decibels(resumed.atRight[1]) - processed.decibels(processed.atRight[1])
+        check(
+            "the sound is unchanged by an idle cycle",
+            abs(leftDrift) < 0.5 && abs(rightDrift) < 0.5,
+            String(format: "%+.2f dB / %+.2f dB", leftDrift, rightDrift))
+
+        // Asked while the tone is still playing rather than after it: the engine
+        // holds the device for as long as audio is arriving, and by the time a
+        // measurement has returned the player has already exited.
+        check("playing again takes the device back", tookDeviceBack(blackHole, tone: tone))
+
+        print("")
+        checkRateChange(blackHole: blackHole, tone: tone, processed: processed)
+
+        print("")
+        return failures > 0 ? 1 : 0
+    }
+
+    /// Another application changing the device's sample rate underneath the
+    /// engine, which is what a DAW or a bit-perfect player does (#27).
+    ///
+    /// Before 1.9 the engine retuned its filters and carried on, and the sound
+    /// was chopped until eqR was restarted — reproduced on a MacBook Pro's
+    /// own speakers by switching them from 44.1 to 48 kHz. Since 1.9 the engine
+    /// rebuilds its path at the new rate instead.
+    ///
+    /// What this can and cannot see: BlackHole has no clock of its own, and on
+    /// it the old engine survived a rate change too — so this does not catch
+    /// that defect, which needs real hardware and ears. It guards the fix: a
+    /// rate change, and the rebuild it now causes, must leave the sound exactly
+    /// as it was. Chopped or missing audio loses energy at the test tones and
+    /// fails the same comparison an idle cycle has to pass.
+    ///
+    /// The change is made while a tone plays, as it is in the report: music
+    /// playing, and a DAW opening a session at another rate.
+    static func checkRateChange(blackHole: AudioDeviceID, tone: URL, processed: Measurement) {
+        print("Following a sample rate change")
+
+        let newRate = 44_100.0
+        let player = Process()
+        player.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+        player.arguments = [tone.path]
+        try? player.run()
+        Thread.sleep(forTimeInterval: 0.6)
+        let changed = setNominalRate(newRate, on: blackHole)
+        player.waitUntilExit()
+        guard changed, nominalRate(of: blackHole) == newRate else {
+            skip(
+                "audio survives a sample rate change",
+                "\(name(of: blackHole)) did not accept \(Int(newRate)) Hz")
+            return
+        }
+        // Time for the engine to notice and rebuild, as it would for a device
+        // change.
+        Thread.sleep(forTimeInterval: 2)
+
+        guard let after = measure(on: blackHole, tone: tone) else {
+            check("audio survives a sample rate change", false, "could not capture")
+            return
+        }
+        check(
+            "audio survives a sample rate change",
+            after.decibels(after.atLeft[0]) > -60 && after.decibels(after.atRight[1]) > -60,
+            String(format: "ch0 %.1f dB, ch1 %.1f dB at %.0f Hz",
+                   after.decibels(after.atLeft[0]), after.decibels(after.atRight[1]), newRate))
+
+        let leftDrift = after.decibels(after.atLeft[0]) - processed.decibels(processed.atLeft[0])
+        let rightDrift =
+            after.decibels(after.atRight[1]) - processed.decibels(processed.atRight[1])
+        check(
+            "the sound is unchanged by a sample rate change",
+            abs(leftDrift) < 0.5 && abs(rightDrift) < 0.5,
+            String(format: "%+.2f dB / %+.2f dB", leftDrift, rightDrift))
+    }
+}
+
+@main
+struct AudioTestCommand {
+    static func main() {
+        let code = AudioTest.run()
+        // Three outcomes, not two. A run that could not start has nothing to
+        // report either way, and saying "passed" because nothing failed is how
+        // a broken setup gets mistaken for a working one.
+        guard code != AudioTest.couldNotRun else {
+            print("\nAUDIO TEST DID NOT RUN")
+            exit(code)
+        }
+        print("\n\(AudioTest.checks - AudioTest.failures)/\(AudioTest.checks) checks passed")
+        print(AudioTest.failures > 0 ? "\nAUDIO TEST FAILED" : "\nAUDIO TEST PASSED")
+        exit(code)
+    }
+}
