@@ -1,6 +1,8 @@
 #+TITLE: eqR
 #+SUBTITLE: System-wide equalizer for macOS
 
+# This is a fork of https://github.com/AndreyPudov/core-eq the only difference is that I added Space (spatial/widening/3D) bcos macbook sound like centered trash.
+
 eqR equalizes *everything you hear* — music, video, calls, games — whatever
 application is playing, with no virtual audio driver and no kernel extension.
 It runs on Apple's native Core Audio process-tap API, so there is nothing
@@ -43,16 +45,6 @@ Every feature is described in the [[file:docs/USER_GUIDE.org][user guide]].
 
 * Installation
 
-** Homebrew (recommended)
-
-#+begin_src sh
-brew tap eqr/eqr
-brew trust eqr/eqr
-brew install --cask eqr
-#+end_src
-
-Upgrade later with =brew update && brew upgrade --cask eqr=.
-
 eqR is signed with its own certificate, which keeps the audio permission
 across updates, but it is not notarized by Apple, so macOS may block first
 launch.
@@ -90,20 +82,6 @@ Download the latest =eqR-x.y.zip= from the *Releases* page, unzip, and move
 
 Something not working? The [[file:docs/USER_GUIDE.org][user guide]] has a troubleshooting section, and
 Settings → Diagnostics produces a report to attach to a bug report.
-
-* Documentation
-
-| Document                                  | What it covers                                          |
-|-------------------------------------------+---------------------------------------------------------|
-| [[file:docs/USER_GUIDE.org][User guide]]           | Every feature, the limitations, and troubleshooting     |
-| [[file:docs/RELEASE_NOTES.org][Release notes]]     | What changed in each release, and how it was found      |
-| [[file:docs/ROADMAP.org][Roadmap]]                | What comes next, and in what order                      |
-| [[file:docs/DEVELOPMENT.org][Development]]        | Building, running, and testing eqR                   |
-| [[file:docs/ARCHITECTURE.org][Architecture]]      | Why the equalizer is shaped the way it is               |
-| [[file:docs/INTERNALS.org][Internals]]          | How the app is put together: the audio path and the rest |
-| [[file:docs/RELEASING.org][Releasing]]          | Continuous integration and cutting a release            |
-
-The [[file:docs/README.org][documentation index]] says which to read first.
 
 * Contributing
 
