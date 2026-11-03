@@ -12,7 +12,7 @@ Mac with every layer of the app reporting that it worked. A fix is easy to
 summarise; how something managed to look healthy while producing no sound is the
 part worth having written down.
 
-* 1.11
+* 1.12
 
 Not yet released.
 
