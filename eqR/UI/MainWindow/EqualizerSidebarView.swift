@@ -17,8 +17,6 @@ struct EqualizerSidebarView: View {
     /// Requests that the main window present the AutoEQ catalog sheet.
     let openAutoEQBrowser: () -> Void
 
-    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
-
     /// The catalog's request to show the by-hand guide here. The catalog closes
     /// itself and taps this instead of presenting the guide, because the paste
     /// it starts ends in a preset this list owns.
@@ -126,13 +124,9 @@ struct EqualizerSidebarView: View {
                 handleDrop(providers: providers)
             }
 
-            if themeMode == "TokyoNight" {
-                Rectangle()
-                    .fill(Theme.TokyoNight.border)
-                    .frame(height: 1)
-            } else {
-                Divider()
-            }
+            Rectangle()
+                .fill(Theme.TokyoNight.border)
+                .frame(height: 1)
             bottomBar
         }
         // Worded the way the system's own confirmations are, because a macOS
@@ -228,21 +222,17 @@ struct EqualizerSidebarView: View {
         // the focus — a hidden `keyboardShortcut` here used to swallow ⌘V for
         // the whole window. See `ClipboardPasteCommand`.
         .background {
-            if themeMode == "TokyoNight" {
-                Theme.TokyoNight.bgDark
-                    .ignoresSafeArea()
-            }
+            Theme.TokyoNight.bgDark
+                .ignoresSafeArea()
             ClipboardPasteCommand(isEnabled: !isPresentingModal) {
                 previewClipboard()
             }
         }
         .overlay(alignment: .trailing) {
-            if themeMode == "TokyoNight" {
-                Rectangle()
-                    .fill(Theme.TokyoNight.border)
-                    .frame(width: 1)
-                    .ignoresSafeArea()
-            }
+            Rectangle()
+                .fill(Theme.TokyoNight.border)
+                .frame(width: 1)
+                .ignoresSafeArea()
         }
     }
 
@@ -282,8 +272,7 @@ struct EqualizerSidebarView: View {
                     // it shapes every application's output, not one player's.
                     Text("System-wide equalizer")
                         .font(Theme.Font.secondary)
-                        .foregroundStyle(
-                            themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
+                        .foregroundStyle(Theme.TokyoNight.comment)
                 }
 
                 Spacer(minLength: 0)
@@ -295,8 +284,7 @@ struct EqualizerSidebarView: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(
                         isHoveringAppMark
-                            ? (themeMode == "TokyoNight"
-                                ? Theme.TokyoNight.bgHighlight : Color.primary.opacity(0.07))
+                            ? Theme.TokyoNight.bgHighlight
                             : Color.clear)
             )
         }
@@ -314,7 +302,7 @@ struct EqualizerSidebarView: View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(Theme.Font.label)
-                .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
+                .foregroundStyle(Theme.TokyoNight.comment)
 
             TextField("Search", text: $search)
                 .textFieldStyle(.plain)
@@ -346,11 +334,11 @@ struct EqualizerSidebarView: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(themeMode == "TokyoNight" ? Theme.TokyoNight.bg : Color.primary.opacity(0.06))
+                .fill(Theme.TokyoNight.bg)
                 .overlay(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .strokeBorder(
-                            themeMode == "TokyoNight" ? Theme.TokyoNight.border : Color.clear,
+                            Theme.TokyoNight.border,
                             lineWidth: 1
                         )
                 )
@@ -370,7 +358,7 @@ struct EqualizerSidebarView: View {
             .textCase(.uppercase)
             .font(Theme.Font.value)
             .kerning(0.6)
-            .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
+            .foregroundStyle(Theme.TokyoNight.comment)
             .padding(.horizontal, 8)
             .padding(.bottom, 4)
     }
@@ -402,11 +390,7 @@ struct EqualizerSidebarView: View {
             } else {
                 Text(profile.name)
                     .font(Theme.Font.body)
-                    .foregroundStyle(
-                        themeMode == "TokyoNight"
-                            ? (isSelected ? Theme.TokyoNight.fg : Theme.TokyoNight.fgDark)
-                            : .primary
-                    )
+                    .foregroundStyle(isSelected ? Theme.TokyoNight.fg : Theme.TokyoNight.fgDark)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
@@ -423,7 +407,7 @@ struct EqualizerSidebarView: View {
                 // to the dot is what makes the dot readable.
                 if isSelected, profileManager.isModified {
                     Circle()
-                        .fill(themeMode == "TokyoNight" ? Theme.TokyoNight.cyan : Color.secondary)
+                        .fill(Theme.TokyoNight.cyan)
                         .frame(width: 5, height: 5)
                         .accessibilityHidden(true)
                 }
@@ -471,13 +455,8 @@ struct EqualizerSidebarView: View {
     }
 
     private func rowFill(isSelected: Bool, isHovered: Bool) -> Color {
-        if themeMode == "TokyoNight" {
-            if isSelected { return Theme.TokyoNight.bgVisual }
-            if isHovered { return Theme.TokyoNight.bgHighlight }
-            return .clear
-        }
-        if isSelected { return .accentColor.opacity(0.18) }
-        if isHovered { return .primary.opacity(0.06) }
+        if isSelected { return Theme.TokyoNight.bgVisual }
+        if isHovered { return Theme.TokyoNight.bgHighlight }
         return .clear
     }
 
@@ -753,9 +732,7 @@ struct EqualizerSidebarView: View {
                 openAutoEQBrowser()
             } label: {
                 Label("AutoEq", systemImage: "waveform.badge.magnifyingglass")
-                    .foregroundStyle(
-                        themeMode == "TokyoNight" ? Theme.TokyoNight.fgDark : .secondary
-                    )
+                    .foregroundStyle(Theme.TokyoNight.fgDark)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -765,8 +742,7 @@ struct EqualizerSidebarView: View {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(
                         isHoveringAutoEQ
-                            ? (themeMode == "TokyoNight"
-                                ? Theme.TokyoNight.bgHighlight : Color.primary.opacity(0.07))
+                            ? Theme.TokyoNight.bgHighlight
                             : Color.clear)
             )
             .onHover { isHoveringAutoEQ = $0 }

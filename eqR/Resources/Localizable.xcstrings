@@ -1166,12 +1166,6 @@
     "These are kept exactly, as parametric bands beyond the sliders’ ±12 dB range. You can clip their gains to ±12 dB instead." : {
 
     },
-    "TokyoNight" : {
-
-    },
-    "TokyoNight applies the TokyoNight nocturnal palette to the equalizer, response curve, and controls." : {
-
-    },
     "Treble" : {
       "comment" : "Quick EQ slider: high frequencies"
     },

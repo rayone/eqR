@@ -66,11 +66,7 @@ final class MenuListView: NSView {
 
     private func updateAppearance() {
         wantsLayer = true
-        if Theme.isTokyoNight {
-            layer?.backgroundColor = Theme.TokyoNight.nsBgDark.cgColor
-        } else {
-            layer?.backgroundColor = nil
-        }
+        layer?.backgroundColor = Theme.TokyoNight.nsBgDark.cgColor
     }
 
     @available(*, unavailable)

@@ -32,7 +32,6 @@ struct KnobControl: View {
 
     @State private var dragAnchor: Double?
     @State private var isHovered = false
-    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
     var body: some View {
         let fraction = CGFloat(scale.fraction(of: value))
         let isLit = isEnabled && (isHovered || dragAnchor != nil)
@@ -41,8 +40,7 @@ struct KnobControl: View {
             Circle()
                 .trim(from: 0, to: Self.sweep)
                 .stroke(
-                    themeMode == "TokyoNight"
-                        ? Theme.TokyoNight.bgHighlight : Color.primary.opacity(0.14),
+                    Theme.TokyoNight.bgHighlight,
                     style: strokeStyle
                 )
                 .rotationEffect(.degrees(Double(Self.startAngle)))
@@ -53,7 +51,7 @@ struct KnobControl: View {
                     to: arcBounds(for: fraction).upperBound
                 )
                 .stroke(
-                    tint.opacity(isEnabled ? 1.0 : (themeMode == "TokyoNight" ? 0.6 : 0.35)),
+                    tint.opacity(isEnabled ? 1.0 : 0.6),
                     style: strokeStyle
                 )
                 .rotationEffect(.degrees(Double(Self.startAngle)))
@@ -63,11 +61,7 @@ struct KnobControl: View {
             GeometryReader { geometry in
                 let radius = min(geometry.size.width, geometry.size.height) / 2
                 Capsule()
-                    .fill(
-                        themeMode == "TokyoNight"
-                            ? Theme.TokyoNight.fg.opacity(isEnabled ? 0.85 : 0.45)
-                            : Color.primary.opacity(isEnabled ? 0.55 : 0.2)
-                    )
+                    .fill(Theme.TokyoNight.fg.opacity(isEnabled ? 0.85 : 0.45))
                     .frame(width: 1.5, height: radius * 0.42)
                     .offset(y: -radius * 0.5)
                     .rotationEffect(.degrees(Double(-135 + fraction * 270)))
@@ -79,7 +73,7 @@ struct KnobControl: View {
             // a control that grows on hover would nudge its neighbours.
             Circle()
                 .strokeBorder(
-                    tint.opacity(isLit ? (themeMode == "TokyoNight" ? 0.45 : 0.28) : 0),
+                    tint.opacity(isLit ? 0.45 : 0),
                     lineWidth: 1
                 )
                 .padding(-2)

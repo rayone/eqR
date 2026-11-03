@@ -1,6 +1,6 @@
 import Foundation
 
-/// The 3D control: mid/side stereo width, applied to the front pair after the
+/// The Space control: mid/side stereo width, applied to the front pair after the
 /// filter chain.
 ///
 /// Self-contained on purpose. Everything the widener needs — its smoothed

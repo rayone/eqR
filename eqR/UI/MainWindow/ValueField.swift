@@ -26,7 +26,6 @@ struct ValueField: View {
     let scale: KnobScale
     let isEnabled: Bool
     let accessibilityLabel: String
-    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
 
     @FocusState private var isFocused: Bool
 
@@ -48,25 +47,19 @@ struct ValueField: View {
             if let unit {
                 Text(unit)
                     .font(Theme.Font.secondary)
-                    .foregroundStyle(
-                        themeMode == "TokyoNight"
-                            ? Theme.TokyoNight.comment : Color(nsColor: .tertiaryLabelColor))
+                    .foregroundStyle(Theme.TokyoNight.comment)
             }
         }
         .padding(.horizontal, 6)
         .frame(height: 20)
         .background(
             RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(
-                    themeMode == "TokyoNight"
-                        ? Theme.TokyoNight.bgDark : Color.primary.opacity(0.06))
+                .fill(Theme.TokyoNight.bgDark)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .strokeBorder(
-                    isFocused
-                        ? Theme.currentAccentColor
-                        : (themeMode == "TokyoNight" ? Theme.TokyoNight.border : Theme.blockBorder),
+                    isFocused ? Theme.currentAccentColor : Theme.TokyoNight.border,
                     lineWidth: isFocused ? 2 : 1
                 )
         )

@@ -24,7 +24,6 @@
 				"Extensions/Color+eqR.swift",
 				"Extensions/NSFont+Bold.swift",
 				Resources/AppIcon.icns,
-				Resources/AppIcon.icon,
 				"Resources/AutoEq-LICENSE.txt",
 				Resources/MenuBarIconSlashTemplate.png,
 				"Resources/MenuBarIconSlashTemplate@2x.png",
@@ -371,7 +370,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Config/Info.plist;
@@ -395,7 +394,7 @@
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				DEPLOYMENT_POSTPROCESSING = YES;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;

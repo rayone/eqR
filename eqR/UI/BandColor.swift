@@ -31,29 +31,17 @@ enum BandColor: Int, CaseIterable, Identifiable {
         BandColor(rawValue: ((index % allCases.count) + allCases.count) % allCases.count) ?? .green
     }
 
-    /// System colours throughout (or TokyoNight palette when TokyoNight is active).
+    /// TokyoNight palette colours.
     var color: Color {
-        if Theme.isTokyoNight {
-            switch self {
-            case .green: return Theme.TokyoNight.green
-            case .blue: return Theme.TokyoNight.blue
-            case .purple: return Theme.TokyoNight.purple
-            case .pink: return Theme.TokyoNight.magenta
-            case .orange: return Theme.TokyoNight.orange
-            case .teal: return Theme.TokyoNight.teal
-            case .indigo: return Theme.TokyoNight.cyan
-            case .red: return Theme.TokyoNight.red
-            }
-        }
         switch self {
-        case .green: return .green
-        case .blue: return .blue
-        case .purple: return .purple
-        case .pink: return .pink
-        case .orange: return .orange
-        case .teal: return .teal
-        case .indigo: return .indigo
-        case .red: return .red
+        case .green: return Theme.TokyoNight.green
+        case .blue: return Theme.TokyoNight.blue
+        case .purple: return Theme.TokyoNight.purple
+        case .pink: return Theme.TokyoNight.magenta
+        case .orange: return Theme.TokyoNight.orange
+        case .teal: return Theme.TokyoNight.teal
+        case .indigo: return Theme.TokyoNight.cyan
+        case .red: return Theme.TokyoNight.red
         }
     }
 

@@ -24,7 +24,6 @@ import UniformTypeIdentifiers
 struct ExclusionsSettingsView: View {
     @State private var list = ExclusionList(listed: [], excluded: [])
     @State private var selection: String?
-    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
 
     var body: some View {
         if AppExclusion.isAvailable {
@@ -44,7 +43,7 @@ struct ExclusionsSettingsView: View {
     private var pane: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Apps turned on below play straight to the output, without EQ.")
-                .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
+                .foregroundStyle(Theme.TokyoNight.comment)
 
             List(selection: $selection) {
                 ForEach(list.listed.map(ExcludableApp.init(bundleID:))) { app in
@@ -61,20 +60,14 @@ struct ExclusionsSettingsView: View {
             .scrollContentBackground(.hidden)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(
-                        themeMode == "TokyoNight"
-                            ? Theme.TokyoNight.bgDark : Color.primary.opacity(0.04)
-                    )
-                    .strokeBorder(
-                        themeMode == "TokyoNight" ? Theme.TokyoNight.border : Color.clear,
-                        lineWidth: 1)
+                    .fill(Theme.TokyoNight.bgDark)
+                    .strokeBorder(Theme.TokyoNight.border, lineWidth: 1)
             )
             .onDeleteCommand(perform: removeSelection)
             .overlay {
                 if list.listed.isEmpty {
                     Text("No apps are excluded.")
-                        .foregroundStyle(
-                            themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
+                        .foregroundStyle(Theme.TokyoNight.comment)
                 }
             }
 
@@ -89,7 +82,7 @@ struct ExclusionsSettingsView: View {
                 "Browsers can’t be excluded: they play through a helper process that macOS shares between apps."
             )
             .font(Theme.Font.label)
-            .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
+            .foregroundStyle(Theme.TokyoNight.comment)
             .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
@@ -103,7 +96,7 @@ struct ExclusionsSettingsView: View {
                 .resizable()
                 .frame(width: 24, height: 24)
             Text(app.name)
-                .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.fg : .primary)
+                .foregroundStyle(Theme.TokyoNight.fg)
             Spacer(minLength: 12)
             Toggle("Exclude \(app.name)", isOn: isExcluded(app.bundleID))
                 .labelsHidden()

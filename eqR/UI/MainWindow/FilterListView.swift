@@ -18,7 +18,6 @@ struct FilterListView: View {
     /// The filter whose node is highlighted on the graph, kept in step with the
     /// row selection so pointing at one points at both.
     @Binding var selectedFilterID: UUID?
-    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
 
     var body: some View {
         // The table takes every point the block has, and Add Band sits on the
@@ -79,10 +78,7 @@ struct FilterListView: View {
             // window has one voice for the small print rather than a different
             // one per section.
             .font(Theme.Font.value)
-            .foregroundStyle(
-                themeMode == "TokyoNight"
-                    ? Theme.TokyoNight.comment : Color(nsColor: .tertiaryLabelColor)
-            )
+            .foregroundStyle(Theme.TokyoNight.comment)
             .fixedSize()
             .frame(width: width, alignment: alignment)
     }
@@ -109,7 +105,7 @@ struct FilterListView: View {
             .foregroundStyle(
                 profileManager.canAddFilter
                     ? Theme.currentAccentColor
-                    : (themeMode == "TokyoNight" ? Theme.TokyoNight.comment : Color.secondary)
+                    : Theme.TokyoNight.comment
             )
             .disabled(!isEnabled || !profileManager.canAddFilter)
             .padding(.top, 8)
@@ -257,15 +253,10 @@ struct FilterListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(
-                    themeMode == "TokyoNight"
-                        ? Theme.TokyoNight.bgDark : Color.primary.opacity(0.03)
-                )
+                .fill(Theme.TokyoNight.bgDark)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(
-                            themeMode == "TokyoNight" ? Theme.TokyoNight.border : Color.clear,
-                            lineWidth: 1)
+                        .strokeBorder(Theme.TokyoNight.border, lineWidth: 1)
                 )
         )
     }

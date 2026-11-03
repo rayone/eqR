@@ -47,23 +47,13 @@ final class MenuRowView: NSView {
 
     private func updateHighlightAppearance() {
         highlight.isHidden = !isHighlighted
-        if Theme.isTokyoNight {
-            highlight.material = .sheet
-            highlight.layer?.backgroundColor = Theme.TokyoNight.nsBgVisual.cgColor
-            titleLabel.textColor = isHighlighted ? Theme.TokyoNight.nsFg : Theme.TokyoNight.nsFgDark
-            chevronView.contentTintColor =
-                isHighlighted ? Theme.TokyoNight.nsCyan : Theme.TokyoNight.nsComment
-            markerView.layer?.backgroundColor =
-                (isHighlighted ? Theme.TokyoNight.nsCyan : Theme.TokyoNight.nsComment).cgColor
-        } else {
-            highlight.material = .selection
-            highlight.layer?.backgroundColor = nil
-            titleLabel.textColor = isHighlighted ? .selectedMenuItemTextColor : .labelColor
-            chevronView.contentTintColor =
-                isHighlighted ? .selectedMenuItemTextColor : .secondaryLabelColor
-            markerView.layer?.backgroundColor =
-                (isHighlighted ? NSColor.selectedMenuItemTextColor : .secondaryLabelColor).cgColor
-        }
+        highlight.material = .sheet
+        highlight.layer?.backgroundColor = Theme.TokyoNight.nsBgVisual.cgColor
+        titleLabel.textColor = isHighlighted ? Theme.TokyoNight.nsFg : Theme.TokyoNight.nsFgDark
+        chevronView.contentTintColor =
+            isHighlighted ? Theme.TokyoNight.nsCyan : Theme.TokyoNight.nsComment
+        markerView.layer?.backgroundColor =
+            (isHighlighted ? Theme.TokyoNight.nsCyan : Theme.TokyoNight.nsComment).cgColor
     }
 
     override func viewDidChangeEffectiveAppearance() {

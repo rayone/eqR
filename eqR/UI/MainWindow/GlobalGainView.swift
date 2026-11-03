@@ -27,7 +27,6 @@ struct GlobalGainView: View {
     let isEnabled: Bool
 
     @AppStorage("masterOutputMode") private var mode: Mode = .preamp
-    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
     @State private var isDragging = false
     @State private var isHovering = false
 
@@ -194,8 +193,7 @@ struct GlobalGainView: View {
                         .fill(
                             profileManager.currentSpatialWidth != 1.0
                                 ? Theme.currentAccentColor.opacity(0.18)
-                                : (themeMode == "TokyoNight"
-                                    ? Theme.TokyoNight.bgHighlight : Color.primary.opacity(0.05))
+                                : Theme.TokyoNight.bgHighlight
                         )
                 )
                 .overlay(
@@ -203,16 +201,14 @@ struct GlobalGainView: View {
                         .strokeBorder(
                             profileManager.currentSpatialWidth != 1.0
                                 ? Theme.currentAccentColor.opacity(0.55)
-                                : (themeMode == "TokyoNight"
-                                    ? Theme.TokyoNight.border : Color.primary.opacity(0.12)),
+                                : Theme.TokyoNight.border,
                             lineWidth: 1
                         )
                 )
                 .foregroundStyle(
                     profileManager.currentSpatialWidth != 1.0
-                        ? AnyShapeStyle(Theme.currentAccentColor)
-                        : (themeMode == "TokyoNight"
-                            ? AnyShapeStyle(Theme.TokyoNight.fgDark) : AnyShapeStyle(.secondary))
+                        ? Theme.currentAccentColor
+                        : Theme.TokyoNight.fgDark
                 )
                 .contentShape(Rectangle())
         }
@@ -247,8 +243,7 @@ struct GlobalGainView: View {
                         .fill(
                             profileManager.isAutoGain
                                 ? Theme.currentAccentColor.opacity(0.18)
-                                : (themeMode == "TokyoNight"
-                                    ? Theme.TokyoNight.bgHighlight : Color.primary.opacity(0.05))
+                                : Theme.TokyoNight.bgHighlight
                         )
                 )
                 .overlay(
@@ -256,16 +251,14 @@ struct GlobalGainView: View {
                         .strokeBorder(
                             profileManager.isAutoGain
                                 ? Theme.currentAccentColor.opacity(0.55)
-                                : (themeMode == "TokyoNight"
-                                    ? Theme.TokyoNight.border : Color.primary.opacity(0.12)),
+                                : Theme.TokyoNight.border,
                             lineWidth: 1
                         )
                 )
                 .foregroundStyle(
                     profileManager.isAutoGain
-                        ? AnyShapeStyle(Theme.currentAccentColor)
-                        : (themeMode == "TokyoNight"
-                            ? AnyShapeStyle(Theme.TokyoNight.fgDark) : AnyShapeStyle(.secondary))
+                        ? Theme.currentAccentColor
+                        : Theme.TokyoNight.fgDark
                 )
                 .contentShape(Rectangle())
         }

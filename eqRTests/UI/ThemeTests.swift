@@ -166,29 +166,20 @@ struct ThemeTests {
 
     // MARK: - The TokyoNight theme
 
-    /// TokyoNight paints the window's surfaces with fixed dark values; the text
-    /// hierarchies, the controls and `Theme.signal` resolve against whatever
-    /// appearance the window is drawn in. With the system in Light mode that
-    /// put dark text on the dark canvas — the theme read as a black window with
-    /// nothing legible in it, which is how it was reported as invisible. The
-    /// fix is the application resolving in `darkAqua` while the theme is on,
-    /// which is what the palette's values were measured against. This holds
-    /// the two halves of that contract: the appearance `applyAppearance()`
-    /// forces is dark while TokyoNight is active and unlocked (nil = system)
-    /// otherwise, and every fixed palette value stays legible against what the
-    /// text hierarchies resolve to in that same appearance.
+    /// eqR ships a single theme. `applyAppearance()` pins the window to
+    /// `darkAqua` so the palette's fixed dark values sit against the appearance
+    /// they were measured in — the text hierarchies, the controls, and
+    /// `Theme.signal` all resolve dark rather than against a light system
+    /// chrome. This holds both halves: the forced appearance is dark, and every
+    /// fixed palette value stays legible against that canvas.
     @MainActor
-    @Test func theTokyoNightWindowResolvesDarkAndThePaletteStaysLegible() throws {
+    @Test func theWindowResolvesDarkAndThePaletteStaysLegible() throws {
         _ = NSApplication.shared
-        let defaults = UserDefaults.standard
-        let previous = defaults.string(forKey: Theme.themeModeKey)
 
-        // Applying with the theme selected forces the dark appearance.
-        defaults.set("TokyoNight", forKey: Theme.themeModeKey)
         Theme.applyAppearance()
         #expect(
             NSApp.appearance?.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua,
-            "TokyoNight must resolve the window dark, or its palette sits against light-appearance chrome"
+            "the window must resolve dark, or the palette sits against light-appearance chrome"
         )
 
         // TokyoNight's dark canvas against the text the app actually draws on
@@ -204,25 +195,6 @@ struct ThemeTests {
             #expect(ratio > 3.0, "\(name) is hard to see on the TokyoNight canvas (\(ratio):1)")
         }
 
-        // Applying with the theme off hands the choice back to the system.
-        defaults.set("System", forKey: Theme.themeModeKey)
-        Theme.applyAppearance()
-        #expect(
-            NSApp.appearance == nil,
-            "System theme must not keep the forced appearance")
-
-        defaults.removeObject(forKey: Theme.themeModeKey)
-        Theme.applyAppearance()
-        #expect(
-            NSApp.appearance?.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua,
-            "a missing setting must fall back to TokyoNight, the default theme")
-
-        if let previous {
-            defaults.set(previous, forKey: Theme.themeModeKey)
-        } else {
-            defaults.removeObject(forKey: Theme.themeModeKey)
-        }
-        Theme.applyAppearance()
         NSApp.appearance = nil
     }
 

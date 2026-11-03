@@ -29,7 +29,6 @@ struct PowerToggleStyle: ToggleStyle {
     }
 
     var weight: Weight = .master
-    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
 
     func makeBody(configuration: Configuration) -> some View {
         Button {
@@ -55,9 +54,7 @@ struct PowerToggleStyle: ToggleStyle {
                                     .strokeBorder(
                                         configuration.isOn
                                             ? Theme.currentAccentColor.opacity(0.55)
-                                            : (themeMode == "TokyoNight"
-                                                ? Theme.TokyoNight.border
-                                                : Color.primary.opacity(0.12)),
+                                            : Theme.TokyoNight.border,
                                         lineWidth: 1
                                     )
                             )

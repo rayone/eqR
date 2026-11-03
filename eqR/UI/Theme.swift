@@ -88,72 +88,36 @@ enum Theme {
             srgbRed: 86 / 255.0, green: 95 / 255.0, blue: 137 / 255.0, alpha: 1)
     }
 
-    /// The `UserDefaults` key holding the selected theme. One definition: the
-    /// settings picker writes it, the window's appearance follows it, and the
-    /// tests reset it — three readers, one literal.
-    static let themeModeKey = "appThemeMode"
-
-    /// True when the TokyoNight palette owns the main window.
-    ///
-    /// A plain `UserDefaults` read rather than something observable: the views
-    /// that draw palette colours are AppKit-hosted canvases and layers, and the
-    /// palette reaching them is `Theme.applyAppearance()` re-resolving the
-    /// window's appearance, which redraws everything beneath it. Reading the
-    /// key here keeps SwiftUI's `WindowBackground` and `SpectrumBackdrop` —
-    /// which hold `@AppStorage(Self.themeModeKey)` for their own invalidation —
-    /// and this computed answer in agreement by construction.
-    static var isTokyoNight: Bool {
-        (UserDefaults.standard.string(forKey: Self.themeModeKey) ?? "TokyoNight")
-            == "TokyoNight"
-    }
-
-    /// Forces the dark appearance on the application while TokyoNight is
-    /// active, restoring the system's choice otherwise.
+    /// Forces the dark appearance the TokyoNight palette was measured against.
     ///
     /// TokyoNight paints its own surfaces — the window background, the block
     /// fills, the plot — but everything the palette does *not* paint resolves
     /// against the appearance it is drawn in: the text hierarchies, the
-    /// controls, the sidebar's vibrant material, and `Theme.signal` itself,
-    /// which is a dynamic colour. On a Mac in Light mode those resolved light,
-    /// and dark text sat on the dark canvas — the theme read as a black window
-    /// with nothing legible in it, which is how it came to be reported as
-    /// invisible. Resolving the window in `darkAqua` is what the palette's
-    /// values were measured against.
+    /// controls, the sidebar's vibrant material, and `Theme.signal`. Resolving
+    /// the window in `darkAqua` is what the palette's values were measured
+    /// against, so the app pins it regardless of the system's Light/Dark choice.
     ///
-    /// Called at launch and whenever the setting changes; the observer in
-    /// `AppDelegate` owns the timing, so this stays a pure write.
+    /// Called once at launch; the appearance never changes at runtime now.
     @MainActor
     static func applyAppearance() {
-        NSApp.appearance = isTokyoNight ? NSAppearance(named: .darkAqua) : nil
+        NSApp.appearance = NSAppearance(named: .darkAqua)
     }
 
-    static var currentBlockBorder: Color {
-        isTokyoNight ? TokyoNight.border : blockBorder
-    }
+    static var currentBlockBorder: Color { TokyoNight.border }
 
-    static var currentBlockBackground: Color {
-        isTokyoNight ? TokyoNight.bgDark : Color.clear
-    }
+    static var currentBlockBackground: Color { TokyoNight.bgDark }
 
-    /// Current control accent: TokyoNight blue when TokyoNight is active, system accent otherwise.
-    static var currentAccentColor: Color {
-        isTokyoNight ? TokyoNight.blue : .accentColor
-    }
+    /// Control accent: TokyoNight blue.
+    static var currentAccentColor: Color { TokyoNight.blue }
 
-    /// Current NSColor accent for AppKit controls and drawing handlers.
-    static var currentNSAccentColor: NSColor {
-        isTokyoNight ? TokyoNight.nsBlue : .controlAccentColor
-    }
+    /// NSColor accent for AppKit controls and drawing handlers.
+    static var currentNSAccentColor: NSColor { TokyoNight.nsBlue }
 
-    /// Current control hover tint: TokyoNight cyan when TokyoNight is active, system accent otherwise.
-    static var currentHoverColor: Color {
-        isTokyoNight ? TokyoNight.cyan : .accentColor
-    }
+    /// Control hover tint: TokyoNight cyan.
+    static var currentHoverColor: Color { TokyoNight.cyan }
 
-    /// Current NSColor hover tint: TokyoNight cyan when TokyoNight is active, system accent otherwise.
-    static var currentNSHoverColor: NSColor {
-        isTokyoNight ? TokyoNight.nsCyan : .controlAccentColor
-    }
+    /// NSColor hover tint for AppKit controls and drawing handlers.
+    static var currentNSHoverColor: NSColor { TokyoNight.nsCyan }
 
     /// Width reserved at the left of the response plot for its dB labels, and
     /// at the left of the band slider row for its own scale.
@@ -390,15 +354,4 @@ extension View {
             )
     }
 
-}
-
-extension UserDefaults {
-    /// KVO bridge over the theme key, so `UserDefaults.publisher(for:)` has an
-    /// `@objc` property to observe: the publisher needs a declared ObjC
-    /// property, and the key lives in defaults, not on the instance. Reads the
-    /// very value `Theme.isTokyoNight` reads, so the two cannot disagree.
-    @objc dynamic var appThemeMode: String? {
-        get { string(forKey: Theme.themeModeKey) }
-        set { set(newValue, forKey: Theme.themeModeKey) }
-    }
 }

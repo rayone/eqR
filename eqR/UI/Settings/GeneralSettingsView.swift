@@ -12,7 +12,6 @@ struct GeneralSettingsView: View {
     /// item in System Settings while this is on screen.
     @State private var opensAtLogin = LoginItem.isEnabled
     @State private var loginItemFailed = false
-    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
 
     @ObservedObject private var engine = EngineStatusBridge.shared
     @ObservedObject private var route = SettingsRoute.shared
@@ -35,27 +34,11 @@ struct GeneralSettingsView: View {
                 Section {
                     Label(problem, systemImage: "exclamationmark.triangle.fill")
                         .font(Theme.Font.label)
-                        .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.fg : .primary)
+                        .foregroundStyle(Theme.TokyoNight.fg)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Button("Show Diagnostics") { route.tab = .diagnostics }
                 }
-            }
-
-            Section {
-                Picker("Theme", selection: $themeMode) {
-                    Text("TokyoNight").tag("TokyoNight")
-                    Text("System").tag("System")
-                }
-                .pickerStyle(.segmented)
-            } header: {
-                Text("Appearance")
-            } footer: {
-                Text(
-                    "TokyoNight applies the TokyoNight nocturnal palette to the equalizer, response curve, and controls."
-                )
-                .font(Theme.Font.label)
-                .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
             }
 
             Section {
@@ -68,14 +51,12 @@ struct GeneralSettingsView: View {
                         systemImage: "exclamationmark.triangle"
                     )
                     .font(Theme.Font.label)
-                    .foregroundStyle(
-                        themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
+                    .foregroundStyle(Theme.TokyoNight.comment)
                 }
             } footer: {
                 Text("At login, eqR opens in the menu bar, without a window.")
                     .font(Theme.Font.label)
-                    .foregroundStyle(
-                        themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
+                    .foregroundStyle(Theme.TokyoNight.comment)
             }
 
             Section {
@@ -86,7 +67,7 @@ struct GeneralSettingsView: View {
                     "Holding the audio device keeps a Mac awake. eqR lets go after half a minute of silence and takes it back the moment something plays. Turn this off if your audio misbehaves."
                 )
                 .font(Theme.Font.label)
-                .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
+                .foregroundStyle(Theme.TokyoNight.comment)
             }
 
             Section {
@@ -95,8 +76,7 @@ struct GeneralSettingsView: View {
             } footer: {
                 Text(Theme.recordingPauseExplanation)
                     .font(Theme.Font.label)
-                    .foregroundStyle(
-                        themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
+                    .foregroundStyle(Theme.TokyoNight.comment)
             }
 
             Section {
@@ -137,8 +117,7 @@ struct GeneralSettingsView: View {
             } footer: {
                 Text(permissionExplanation)
                     .font(Theme.Font.label)
-                    .foregroundStyle(
-                        themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
+                    .foregroundStyle(Theme.TokyoNight.comment)
             }
         }
         .formStyle(.grouped)

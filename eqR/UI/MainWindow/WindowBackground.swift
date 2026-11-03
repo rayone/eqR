@@ -1,31 +1,11 @@
-import AppKit
 import SwiftUI
 
-/// The window's own background material, for the content column to sit on
-/// (or TokyoNight background when TokyoNight theme is active).
+/// The window's own background: the TokyoNight canvas the content column sits on.
 struct WindowBackground: View {
-    @AppStorage(Theme.themeModeKey) private var themeMode: String = "TokyoNight"
-
     var body: some View {
-        if themeMode == "TokyoNight" {
-            Theme.TokyoNight.bg
-                .overlay(Theme.TokyoNight.bg.opacity(0.98))
-        } else {
-            SystemVisualEffectBackground()
-        }
+        Theme.TokyoNight.bg
+            .overlay(Theme.TokyoNight.bg.opacity(0.98))
     }
-}
-
-private struct SystemVisualEffectBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .windowBackground
-        view.blendingMode = .behindWindow
-        view.state = .followsWindowActiveState
-        return view
-    }
-
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 extension View {

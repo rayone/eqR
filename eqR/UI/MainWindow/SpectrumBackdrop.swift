@@ -5,8 +5,6 @@ struct SpectrumBackdrop: View {
     let axis: ResponseAxis
     let plotHeight: CGFloat
 
-    @AppStorage(Theme.themeModeKey) private var themeMode: String = "TokyoNight"
-
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !spectrum.isRunning)) {
             timeline in
@@ -34,16 +32,9 @@ struct SpectrumBackdrop: View {
                 fill.addLine(to: CGPoint(x: axis.x(points[0].frequency), y: plotHeight))
                 fill.closeSubpath()
 
-                if themeMode == "TokyoNight" {
-                    context.fill(fill, with: .color(Theme.TokyoNight.blue.opacity(0.14)))
-                    context.stroke(
-                        line, with: .color(Theme.TokyoNight.cyan.opacity(0.35)), lineWidth: 1.5)
-                } else {
-                    // Deliberately faint: the analyzer is context for the curve, not a
-                    // second subject.
-                    context.fill(fill, with: .color(.primary.opacity(0.05)))
-                    context.stroke(line, with: .color(.primary.opacity(0.13)), lineWidth: 1)
-                }
+                context.fill(fill, with: .color(Theme.TokyoNight.blue.opacity(0.14)))
+                context.stroke(
+                    line, with: .color(Theme.TokyoNight.cyan.opacity(0.35)), lineWidth: 1.5)
             }
             .allowsHitTesting(false)
         }

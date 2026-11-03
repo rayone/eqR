@@ -21,8 +21,6 @@ struct VerticalGainSlider: View {
     let onDragChange: (Bool) -> Void
     let onReset: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
-    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
     static var knobDiameter: CGFloat { Theme.BandRow.knobDiameter }
     private static var trackWidth: CGFloat { Theme.BandRow.trackWidth }
 
@@ -40,10 +38,7 @@ struct VerticalGainSlider: View {
 
             ZStack {
                 Capsule()
-                    .fill(
-                        themeMode == "TokyoNight"
-                            ? Theme.TokyoNight.bgHighlight : Color.primary.opacity(0.18)
-                    )
+                    .fill(Theme.TokyoNight.bgHighlight)
                     .frame(width: Self.trackWidth, height: height - Self.knobDiameter / 2)
                     .position(x: midX, y: height / 2)
 
@@ -53,31 +48,24 @@ struct VerticalGainSlider: View {
                 Capsule()
                     .fill(
                         isActive
-                            ? AnyShapeStyle(Color.eqRSignal)
-                            : (themeMode == "TokyoNight"
-                                ? AnyShapeStyle(Theme.TokyoNight.blue.opacity(0.65))
-                                : AnyShapeStyle(Color.primary.opacity(0.35)))
+                            ? Color.eqRSignal
+                            : Theme.TokyoNight.blue.opacity(0.65)
                     )
                     .frame(width: Self.trackWidth, height: abs(zeroY - knobY))
                     .position(x: midX, y: (knobY + zeroY) / 2)
 
                 Circle()
-                    .fill(
-                        themeMode == "TokyoNight"
-                            ? Theme.TokyoNight.fg
-                            : (colorScheme == .dark ? Color(white: 0.85) : .white)
-                    )
+                    .fill(Theme.TokyoNight.fg)
                     .overlay(
                         Circle().strokeBorder(
                             isActive
                                 ? Color.eqRSignal
-                                : (themeMode == "TokyoNight"
-                                    ? Theme.TokyoNight.borderHighlight : Color.black.opacity(0.22)),
-                            lineWidth: isActive ? 2 : (themeMode == "TokyoNight" ? 1 : 0.5)
+                                : Theme.TokyoNight.borderHighlight,
+                            lineWidth: isActive ? 2 : 1
                         )
                     )
                     .shadow(
-                        color: .black.opacity(themeMode == "TokyoNight" ? 0.45 : 0.28), radius: 1.5,
+                        color: .black.opacity(0.45), radius: 1.5,
                         y: 0.5
                     )
                     .frame(width: Self.knobDiameter, height: Self.knobDiameter)

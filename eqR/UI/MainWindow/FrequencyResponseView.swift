@@ -38,7 +38,6 @@ struct FrequencyResponseView: View {
     /// observed by `SpectrumBackdrop` alone, so its sixty-a-second updates
     /// invalidate that layer and leave this view untouched.
     var spectrum: SpectrumAnalyzer?
-    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
 
     /// The filter whose node is drawn as chosen, and whose row is highlighted in
     /// the parametric table. One selection, shown in both places.
@@ -384,8 +383,7 @@ struct FrequencyResponseView: View {
         line.addLine(to: CGPoint(x: size.width, y: y))
         context.stroke(
             line,
-            with: .color(
-                themeMode == "TokyoNight" ? Theme.TokyoNight.border : .primary.opacity(0.12)),
+            with: .color(Theme.TokyoNight.border),
             lineWidth: 1)
     }
 
@@ -414,8 +412,7 @@ struct FrequencyResponseView: View {
         }
         context.stroke(
             verticals,
-            with: .color(
-                themeMode == "TokyoNight" ? Theme.TokyoNight.border : .primary.opacity(0.09)),
+            with: .color(Theme.TokyoNight.border),
             style: StrokeStyle(lineWidth: 1, dash: [2, 4])
         )
 
@@ -426,16 +423,13 @@ struct FrequencyResponseView: View {
         zeroLine.addLine(to: CGPoint(x: size.width, y: zeroY))
         context.stroke(
             zeroLine,
-            with: .color(
-                themeMode == "TokyoNight"
-                    ? Theme.TokyoNight.borderHighlight.opacity(0.4) : .primary.opacity(0.14)),
+            with: .color(Theme.TokyoNight.borderHighlight.opacity(0.4)),
             lineWidth: 1)
 
         for frequency in labelFrequencies {
             let label = Text(BandFormat.frequency(frequency))
                 .font(Theme.Font.secondary)
-                .foregroundStyle(
-                    themeMode == "TokyoNight" ? Theme.TokyoNight.fgDark : Color.secondary)
+                .foregroundStyle(Theme.TokyoNight.fgDark)
             context.draw(
                 label, at: CGPoint(x: axis.x(frequency), y: bottom + labelStripHeight / 2),
                 anchor: .center)
@@ -445,9 +439,7 @@ struct FrequencyResponseView: View {
         for dB in labeledDBs {
             let label = Text(BandFormat.axisGain(dB))
                 .font(Theme.Font.secondary)
-                .foregroundStyle(
-                    themeMode == "TokyoNight"
-                        ? Theme.TokyoNight.comment : Color(nsColor: .tertiaryLabelColor))
+                .foregroundStyle(Theme.TokyoNight.comment)
             context.draw(label, at: CGPoint(x: left - 8, y: yPosition(dB, size)), anchor: .trailing)
         }
 
@@ -524,9 +516,8 @@ struct FrequencyResponseView: View {
             fill,
             with: .linearGradient(
                 Gradient(colors: [
-                    Color.eqRSignal.opacity(themeMode == "TokyoNight" ? 0.16 : 0.10),
-                    (themeMode == "TokyoNight" ? Theme.TokyoNight.blue : Color.eqRSignal).opacity(
-                        0.01),
+                    Color.eqRSignal.opacity(0.16),
+                    Theme.TokyoNight.blue.opacity(0.01),
                 ]),
                 startPoint: CGPoint(x: 0, y: 0),
                 endPoint: CGPoint(x: 0, y: floor)
@@ -535,7 +526,7 @@ struct FrequencyResponseView: View {
 
         context.stroke(
             curve, with: .color(.eqRSignal),
-            style: StrokeStyle(lineWidth: themeMode == "TokyoNight" ? 2 : 1.5, lineJoin: .round)
+            style: StrokeStyle(lineWidth: 2, lineJoin: .round)
         )
     }
 

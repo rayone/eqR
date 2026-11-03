@@ -15,37 +15,31 @@ struct DiagnosticsSettingsView: View {
 
     @State private var report = ""
     @State private var didCopy = false
-    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Audio Diagnostics")
                 .font(Theme.Font.heading)
-                .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.fg : .primary)
+                .foregroundStyle(Theme.TokyoNight.fg)
 
             Text(
                 "What eqR sees on this Mac. Include it with a bug report: it answers most questions about audio problems. It names your audio devices, your presets, and any apps you’ve excluded, and contains nothing else about you."
             )
             .font(Theme.Font.label)
-            .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.comment : .secondary)
+            .foregroundStyle(Theme.TokyoNight.comment)
             .fixedSize(horizontal: false, vertical: true)
 
             ScrollView([.horizontal, .vertical]) {
                 Text(report)
                     .font(Theme.Font.report)
-                    .foregroundStyle(themeMode == "TokyoNight" ? Theme.TokyoNight.fgDark : .primary)
+                    .foregroundStyle(Theme.TokyoNight.fgDark)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(6)
             }
-            .background(
-                themeMode == "TokyoNight"
-                    ? Theme.TokyoNight.bgDark : Color(nsColor: .textBackgroundColor)
-            )
+            .background(Theme.TokyoNight.bgDark)
             .overlay(
                 RoundedRectangle(cornerRadius: 5)
-                    .strokeBorder(
-                        themeMode == "TokyoNight"
-                            ? Theme.TokyoNight.border : Color(nsColor: .separatorColor))
+                    .strokeBorder(Theme.TokyoNight.border)
             )
             .clipShape(RoundedRectangle(cornerRadius: 5))
 

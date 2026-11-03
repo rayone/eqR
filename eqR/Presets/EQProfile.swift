@@ -29,7 +29,7 @@ struct EQProfile: Codable, Equatable, Identifiable {
     /// make a preset clip that would not have clipped anyway.
     var autoGain = true
 
-    /// 3D / Stereo widening: 1.0 is neutral stereo, 0.0 is mono, 2.0 is 200% wide.
+    /// Space / stereo widening: 1.0 is neutral stereo, 0.0 is mono, 2.0 is 200% wide.
     var spatialWidth: Double = 1.0
 
     /// Built-in profiles ship with eqR and can't be renamed, edited in place,

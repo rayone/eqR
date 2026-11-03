@@ -649,17 +649,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             let fillColor =
                 selected
                 ? Theme.currentNSAccentColor
-                : (Theme.isTokyoNight
-                    ? Theme.TokyoNight.nsBgHighlight : NSColor.labelColor.withAlphaComponent(0.12))
+                : Theme.TokyoNight.nsBgHighlight
             fillColor.setFill()
             let oval = NSBezierPath(ovalIn: rect)
             oval.fill()
-            if Theme.isTokyoNight {
-                let ringColor = selected ? Theme.TokyoNight.nsCyan : Theme.TokyoNight.nsBorder
-                ringColor.setStroke()
-                oval.lineWidth = 1
-                oval.stroke()
-            }
+            let ringColor = selected ? Theme.TokyoNight.nsCyan : Theme.TokyoNight.nsBorder
+            ringColor.setStroke()
+            oval.lineWidth = 1
+            oval.stroke()
             // The full slider range fills the box, so a preset that uses all of
             // it reaches the edges and a flat one is a line through the middle.
             let box = rect.insetBy(dx: 5, dy: 7)
@@ -680,7 +677,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             let strokeColor =
                 selected
                 ? NSColor.white
-                : (Theme.isTokyoNight ? Theme.TokyoNight.nsCyan : NSColor.labelColor)
+                : Theme.TokyoNight.nsCyan
             strokeColor.setStroke()
             path.stroke()
             return true
@@ -704,17 +701,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             let fillColor =
                 selected
                 ? Theme.currentNSAccentColor
-                : (Theme.isTokyoNight
-                    ? Theme.TokyoNight.nsBgHighlight : NSColor.labelColor.withAlphaComponent(0.12))
+                : Theme.TokyoNight.nsBgHighlight
             fillColor.setFill()
             let oval = NSBezierPath(ovalIn: rect)
             oval.fill()
-            if Theme.isTokyoNight {
-                let ringColor = selected ? Theme.TokyoNight.nsCyan : Theme.TokyoNight.nsBorder
-                ringColor.setStroke()
-                oval.lineWidth = 1
-                oval.stroke()
-            }
+            let ringColor = selected ? Theme.TokyoNight.nsCyan : Theme.TokyoNight.nsBorder
+            ringColor.setStroke()
+            oval.lineWidth = 1
+            oval.stroke()
             let glyphColor: NSColor = selected ? .white : .labelColor
             let tinted =
                 symbol.withSymbolConfiguration(

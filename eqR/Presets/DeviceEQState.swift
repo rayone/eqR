@@ -28,7 +28,7 @@ struct WorkingState: Codable, Equatable {
     var tone: [Double]?
     /// Whether the trim is being computed rather than held.
     var autoGain: Bool
-    /// 3D / Stereo widening: 1.0 is neutral stereo, 0.0 is mono, 2.0 is 200% wide.
+    /// Space / stereo widening: 1.0 is neutral stereo, 0.0 is mono, 2.0 is 200% wide.
     var spatialWidth: Double = 1.0
 
     init(

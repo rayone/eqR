@@ -37,14 +37,6 @@ final class MenuSwitch: NSControl {
     /// The knob's margin inside the track, on every side.
     private static let inset: CGFloat = 2
 
-    /// Off: a translucent fill that lets the menu's material through, as the
-    /// system switch does — measured over an opaque window as 12% white on dark
-    /// and 9% black on light.
-    private static let offTrack = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(white: 1, alpha: 0.12) : NSColor(white: 0, alpha: 0.09)
-    }
-
     /// Measured: light grey on dark, white on light.
     private static let knobColor = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -116,12 +108,8 @@ final class MenuSwitch: NSControl {
         var trackColor: CGColor = NSColor.clear.cgColor
         var knobColor: CGColor = NSColor.white.cgColor
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            if Theme.isTokyoNight {
-                trackColor =
-                    (isOn ? Theme.TokyoNight.nsBlue : Theme.TokyoNight.nsBgHighlight).cgColor
-            } else {
-                trackColor = (isOn ? NSColor.controlAccentColor : Self.offTrack).cgColor
-            }
+            trackColor =
+                (isOn ? Theme.TokyoNight.nsBlue : Theme.TokyoNight.nsBgHighlight).cgColor
             knobColor = Self.knobColor.cgColor
         }
 

@@ -36,22 +36,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func finishLaunching() {
-        // The window resolves against this from its first frame; letting it
-        // draw light and switch dark afterwards is a visible flash.
+        // eqR ships one theme (TokyoNight). The window must resolve dark from
+        // its first frame; the appearance never changes at runtime, so this is
+        // a one-time pin rather than something an observer has to track.
         Theme.applyAppearance()
-
-        // The palette is not observable, so the appearance follows the setting
-        // from here on: the publisher fires with the current value at launch
-        // and again on every change, which is what carries switches made in
-        // Settings while the app runs. The value side (what the views read) is
-        // `Theme.isTokyoNight`; this side drives the resolution everything
-        // unpainted — text, controls, the sidebar material — draws against.
-        UserDefaults.standard
-            .publisher(for: \.appThemeMode)
-            .sink { _ in
-                MainActor.assumeIsolated { Theme.applyAppearance() }
-            }
-            .store(in: &cancellables)
 
         menuBarController = MenuBarController(
             profileManager: profileManager,

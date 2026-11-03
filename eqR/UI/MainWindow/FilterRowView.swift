@@ -6,7 +6,6 @@ struct FilterRowView: View {
     let isSelected: Bool
     let isEnabled: Bool
     @ObservedObject var profileManager: ProfileManager
-    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
     @State private var isChoosingColor = false
 
     private var color: Color { BandColor.at(filter.colorIndex).color }
@@ -48,16 +47,11 @@ struct FilterRowView: View {
         // values.
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(
-                    themeMode == "TokyoNight"
-                        ? (isSelected ? Theme.TokyoNight.bgVisual : Color.clear)
-                        : Color.primary.opacity(isSelected ? 0.06 : 0.0)
-                )
+                .fill(isSelected ? Theme.TokyoNight.bgVisual : Color.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .strokeBorder(
-                            color.opacity(
-                                isSelected ? (themeMode == "TokyoNight" ? 0.9 : 0.7) : 0.0),
+                            color.opacity(isSelected ? 0.9 : 0.0),
                             lineWidth: 1.5)
                 )
         )

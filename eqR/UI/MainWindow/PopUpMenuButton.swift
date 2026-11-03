@@ -43,11 +43,7 @@ struct PopUpMenuButton<Label: View>: View {
         // A borderless pop-up says it is one by lighting up under the pointer.
         .background {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(
-                    isHovering
-                        ? (Theme.isTokyoNight
-                            ? Theme.TokyoNight.bgHighlight : Color.primary.opacity(0.07))
-                        : Color.clear)
+                .fill(isHovering ? Theme.TokyoNight.bgHighlight : Color.clear)
         }
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovering)

@@ -148,9 +148,7 @@ struct ImportConfirmationSheet: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(
-                        Theme.isTokyoNight ? Theme.TokyoNight.bgDark : Color.primary.opacity(0.04)
-                    )
+                    .fill(Theme.TokyoNight.bgDark)
                     .strokeBorder(Theme.currentBlockBorder, lineWidth: 1)
             )
         }

@@ -78,7 +78,7 @@ final class QuickEQBodyView: NSView {
     }
 
     private func updateLabelsAppearance() {
-        let color = Theme.isTokyoNight ? Theme.TokyoNight.nsFgDark : .labelColor
+        let color = Theme.TokyoNight.nsFgDark
         axisLabels.forEach { $0.textColor = color }
     }
 
@@ -170,11 +170,6 @@ final class QuickEQBodyView: NSView {
 /// does with a click; the pair still ends where it should.
 private final class ToneSliderCell: NSSliderCell {
     override func drawKnob(_ knobRect: NSRect) {
-        guard Theme.isTokyoNight else {
-            super.drawKnob(knobRect)
-            return
-        }
-
         let insetRect = knobRect.insetBy(dx: 1, dy: 1)
 
         NSGraphicsContext.saveGraphicsState()
@@ -243,11 +238,7 @@ private final class ToneSlider: NSSlider {
     }
 
     private func updateSliderAppearance() {
-        if Theme.isTokyoNight {
-            trackFillColor = isHovered ? Theme.TokyoNight.nsCyan : Theme.TokyoNight.nsBlue
-        } else {
-            trackFillColor = nil
-        }
+        trackFillColor = isHovered ? Theme.TokyoNight.nsCyan : Theme.TokyoNight.nsBlue
         needsDisplay = true
     }
 

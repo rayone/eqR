@@ -45,7 +45,6 @@ struct AutoEQBrowserView: View {
 
     /// Whether the search field holds the keyboard when the window opens.
     @FocusState private var searchFieldFocused: Bool
-    @AppStorage(Theme.themeModeKey) private var themeMode = "TokyoNight"
     /// A save that would change the correction, held until the user decides.
     /// The same sheet the manual import paths show, presented over the catalog.
     @State private var confirmationImport: ProfileManager.ImportPreview?
@@ -72,7 +71,7 @@ struct AutoEQBrowserView: View {
         // for, and a list asks for the height of its rows: with only a minimum
         // the sheet grew and shrank with every keystroke of a search.
         .frame(width: 600, height: 680)
-        .background(themeMode == "TokyoNight" ? Theme.TokyoNight.bg : Color.clear)
+        .background(Theme.TokyoNight.bg)
         .tint(Theme.currentAccentColor)
         .task {
             auditionHeld = store.selectedModelName != nil
@@ -295,15 +294,10 @@ struct AutoEQBrowserView: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(
-                    themeMode == "TokyoNight"
-                        ? Theme.TokyoNight.bgDark : Color.primary.opacity(0.06)
-                )
+                .fill(Theme.TokyoNight.bgDark)
                 .overlay(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(
-                            themeMode == "TokyoNight" ? Theme.TokyoNight.border : Color.clear,
-                            lineWidth: 1)
+                        .strokeBorder(Theme.TokyoNight.border, lineWidth: 1)
                 )
         )
         .onAppear { searchFieldFocused = true }
@@ -415,13 +409,8 @@ struct AutoEQBrowserView: View {
     }
 
     private func rowFill(isSelected: Bool, isHovered: Bool) -> Color {
-        if themeMode == "TokyoNight" {
-            if isSelected { return Theme.TokyoNight.bgVisual }
-            if isHovered { return Theme.TokyoNight.bgHighlight }
-            return .clear
-        }
-        if isSelected { return .accentColor.opacity(0.18) }
-        if isHovered { return .primary.opacity(0.06) }
+        if isSelected { return Theme.TokyoNight.bgVisual }
+        if isHovered { return Theme.TokyoNight.bgHighlight }
         return .clear
     }
 

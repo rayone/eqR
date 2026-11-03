@@ -45,7 +45,7 @@ final class ProfileManager: ObservableObject {
     /// sliders can restore their positions.
     @Published private(set) var tone = ToneControls()
 
-    /// 3D / Stereo width: 1.0 is neutral stereo, 0.0 is mono, 2.0 is 200% wide.
+    /// Space / stereo width: 1.0 is neutral stereo, 0.0 is mono, 2.0 is 200% wide.
     @Published private(set) var currentSpatialWidth: Double = 1.0
 
     /// Whether the trim is being computed from the chain. See `AutoGain`.
@@ -849,7 +849,7 @@ final class ProfileManager: ObservableObject {
         chainDidChange()
     }
 
-    // MARK: - 3D / Stereo widening
+    // MARK: - Space / stereo widening
 
     func setSpatialWidth(_ width: Double) {
         let clamped = width.clamped(to: 0.0...2.0)

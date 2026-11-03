@@ -94,12 +94,14 @@ func generateMenuBarTemplate(svgURL: URL, dest1xURL: URL, dest2xURL: URL) -> Boo
         return false
     }
 
-    // Height is 18pt for standard menu bar item, 36pt for 2x
-    // Svg viewBox is 510x620, so aspect ratio is 510 / 620 = 0.82258
-    let width1x: CGFloat = round(18.0 * (510.0 / 620.0)) // 15
+    // 18pt tall for a standard menu bar item, 36pt @2x. Width follows the SVG's
+    // own aspect ratio rather than a hardcoded one, so a source of any shape
+    // renders at its true proportions instead of being squashed to fit.
+    let aspect = img.size.width > 0 && img.size.height > 0 ? img.size.width / img.size.height : 1
     let height1x: CGFloat = 18.0
-    let width2x: CGFloat = width1x * 2.0 // 30
-    let height2x: CGFloat = height1x * 2.0 // 36
+    let width1x: CGFloat = round(height1x * aspect)
+    let height2x: CGFloat = height1x * 2.0
+    let width2x: CGFloat = width1x * 2.0
 
     func savePNG(pixelWidth: Int, pixelHeight: Int, to url: URL) -> Bool {
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil,

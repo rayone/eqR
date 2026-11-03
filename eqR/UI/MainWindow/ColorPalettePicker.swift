@@ -26,8 +26,7 @@ struct ColorPalettePicker: View {
                             // smudge, and the ring reads at any size.
                             Circle()
                                 .strokeBorder(
-                                    Theme.isTokyoNight
-                                        ? Theme.TokyoNight.fg : Color.primary.opacity(0.9),
+                                    Theme.TokyoNight.fg,
                                     lineWidth: 2
                                 )
                                 .padding(-3)

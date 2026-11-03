@@ -203,7 +203,7 @@ final class EQProcessor: @unchecked Sendable {
     /// The chain itself, and everything the samples pass through. See
     /// `FilterBank`.
     private var bank = FilterBank()
-    /// The 3D control. See `StereoWidener`.
+    /// The Space control. See `StereoWidener`.
     private var widener = StereoWidener()
     private var protection = [OutputProtection](
         repeating: OutputProtection(), count: EQProcessor.maxChannels)
@@ -402,7 +402,7 @@ final class EQProcessor: @unchecked Sendable {
                 target.pointer, stride: target.stride, frames: count, channel: channel)
         }
 
-        // The 3D control works on the front pair only.
+        // The Space control works on the front pair only.
         let wideningThisBlock = widener.addsLevel
         if router.routedChannels >= 2,
             let left = outputSpan(0, in: outABL, offset: offset),

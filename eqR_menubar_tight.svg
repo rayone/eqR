@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="22" height="18" viewBox="0 0 22 18" fill="none">
+  <title>eqR macOS menubar icon</title>
+  <desc>Tight, transparent, monochrome five-bar equalizer icon for a macOS menu bar app.</desc>
+
+  <!--
+    Transparent background.
+    Monochrome vector geometry suitable as a template-style status bar icon.
+    Tight bounds with minimal wasted space.
+  -->
+
+  <g fill="#000000">
+    <rect x="0.5"  y="5.5" width="3" height="7"  rx="1.5"/>
+    <rect x="4.75" y="3.0" width="3" height="12" rx="1.5"/>
+    <rect x="9.0"  y="0.5" width="3" height="17" rx="1.5"/>
+    <rect x="13.25" y="3.0" width="3" height="12" rx="1.5"/>
+    <rect x="17.5" y="5.5" width="3" height="7"  rx="1.5"/>
+  </g>
+</svg>

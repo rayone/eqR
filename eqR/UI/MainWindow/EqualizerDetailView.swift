@@ -373,7 +373,7 @@ struct EqualizerDetailView: View {
         .frame(minHeight: 120, maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Theme.isTokyoNight ? Theme.TokyoNight.bgDark : Color.primary.opacity(0.035))
+                .fill(Theme.TokyoNight.bgDark)
                 .strokeBorder(Theme.currentBlockBorder, lineWidth: 1)
         )
         .allowsHitTesting(audioEngine.isProcessing)
@@ -697,10 +697,7 @@ struct EqualizerDetailView: View {
             .frame(maxWidth: 380)
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(
-                        Theme.isTokyoNight
-                            ? AnyShapeStyle(Theme.TokyoNight.bgDark)
-                            : AnyShapeStyle(.regularMaterial))
+                    .fill(Theme.TokyoNight.bgDark)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10).strokeBorder(
@@ -747,9 +744,7 @@ struct EqualizerDetailView: View {
         .frame(maxWidth: 320)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(
-                    Theme.isTokyoNight
-                        ? AnyShapeStyle(Theme.TokyoNight.bgDark) : AnyShapeStyle(.regularMaterial))
+                .fill(Theme.TokyoNight.bgDark)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
@@ -790,9 +785,7 @@ struct EqualizerDetailView: View {
         .frame(maxWidth: 320)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(
-                    Theme.isTokyoNight
-                        ? AnyShapeStyle(Theme.TokyoNight.bgDark) : AnyShapeStyle(.regularMaterial))
+                .fill(Theme.TokyoNight.bgDark)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
